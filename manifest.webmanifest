@@ -1,7 +1,7 @@
 {
   "name": "LSN PHARMA Livraison",
   "short_name": "LSN Livraison",
-  "start_url": "./?v=43",
+  "start_url": "./?v=44",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#111827"

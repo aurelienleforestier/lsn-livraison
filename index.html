@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
 <link rel="manifest" href="manifest.webmanifest">
-<title>LSN PHARMA Livraison V4.2</title>
+<title>LSN PHARMA Livraison V4.4</title>
 <style>
 :root{--bg:#f5f7f8;--card:#fff;--text:#111827;--muted:#667085;--blue:#2563eb;--green:#16a34a;--orange:#f59e0b;--red:#dc2626;--line:#e5e7eb}
 *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
@@ -41,7 +41,7 @@ h1{font-size:25px;margin:0 0 5px}h2{font-size:21px;margin:0 0 8px}h3{font-size:1
 </head>
 <body>
 <div class="app">
-<header><div class="logo">LSN <span>PHARMA</span></div><div class="badge">V4.3 · Flux chargement</div></header>
+<header><div class="logo">LSN <span>PHARMA</span></div><div class="badge">V4.4 · Chargement / livraison</div></header>
 <nav>
 <button data-go="home" class="active" onclick="go('home')">Tournées</button>
 <button data-go="load" onclick="go('load')">Chargement</button>
@@ -68,6 +68,7 @@ h1{font-size:25px;margin:0 0 5px}h2{font-size:21px;margin:0 0 8px}h3{font-size:1
 <input id="pharmacyLoad" class="input" placeholder="QR pharmacie ou scan Zebra" autocomplete="off">
 <button class="btn secondary" onclick="handlePharmacyLoad()">VALIDER LE CODE</button>
 </div>
+<div id="manualLoadBox" class="card"></div>
 <div id="activeLoadPharmacy"></div>
 <div id="loadReady"></div>
 <div id="loadNotice"></div>
@@ -131,19 +132,19 @@ const defaultRoutes=[
 function n(id){return document.getElementById(id)}
 function notice(id,msg,type='info'){const el=n(id);if(el)el.innerHTML='<div class="notice '+type+'">'+msg+'</div>'}
 function freshState(){return {
- appVersion:43, routes:defaultRoutes.map(r=>({...r,pharmacies:[...r.pharmacies]})), selectedRoute:null, load:{}, delivered:{}, deliveryStarted:{},
+ appVersion:44, routes:defaultRoutes.map(r=>({...r,pharmacies:[...r.pharmacies]})), selectedRoute:null, load:{}, delivered:{}, deliveryStarted:{},
  bins:{available:Array.from({length:20},(_,i)=>'BAC-'+String(i+1).padStart(6,'0')),
  client:{'PH-001458':['BAC-OLD-001','BAC-OLD-002','BAC-OLD-003','BAC-OLD-004','BAC-OLD-005']}}
 }}
 function loadState(){
  let saved=null;
  try{
-   const raw=localStorage.getItem('lsn-v43')||localStorage.getItem('lsn-v42')||localStorage.getItem('lsn-v4')||localStorage.getItem('lsn-v3');
+   const raw=localStorage.getItem('lsn-v44')||localStorage.getItem('lsn-v43')||localStorage.getItem('lsn-v42')||localStorage.getItem('lsn-v4')||localStorage.getItem('lsn-v3');
    if(raw)saved=JSON.parse(raw);
  }catch(e){saved=null}
  if(!saved || !Array.isArray(saved.routes)) return freshState();
  const previousVersion=Number(saved.appVersion||0);
- saved.appVersion=43;
+ saved.appVersion=44;
  saved.selectedRoute = typeof saved.selectedRoute==='string' ? saved.selectedRoute : null;
  saved.load = saved.load && typeof saved.load==='object' ? saved.load : {};
  Object.keys(saved.load).forEach(pid=>{
@@ -151,6 +152,10 @@ function loadState(){
    saved.load[pid]={bins:Array.isArray(d.bins)?d.bins:[],parcels:Number.isFinite(d.parcels)?d.parcels:0,done:!!d.done,noOrder:!!d.noOrder};
  });
  saved.delivered = saved.delivered && typeof saved.delivered==='object' ? saved.delivered : {};
+ Object.keys(saved.delivered).forEach(pid=>{
+   const d=saved.delivered[pid]&&typeof saved.delivered[pid]==='object'?saved.delivered[pid]:{};
+   saved.delivered[pid]={bins:Array.isArray(d.bins)?d.bins:[],parcels:Number.isFinite(d.parcels)?d.parcels:0,returns:Array.isArray(d.returns)?d.returns:[],done:!!d.done,manualBins:Array.isArray(d.manualBins)?d.manualBins:[]};
+ });
  saved.deliveryStarted = saved.deliveryStarted && typeof saved.deliveryStarted==='object' ? saved.deliveryStarted : {};
  saved.bins = saved.bins && typeof saved.bins==='object' ? saved.bins : {};
  saved.bins.available = Array.isArray(saved.bins.available) ? saved.bins.available : freshState().bins.available;
@@ -164,7 +169,7 @@ function loadState(){
 }
 let state=loadState();
 let currentLoadPharmacy=null,currentDeliveryPharmacy=null,cameraTarget=null,stream=null,scanTimer=null;
-function save(){try{localStorage.setItem('lsn-v43',JSON.stringify(state))}catch(e){}}
+function save(){try{localStorage.setItem('lsn-v44',JSON.stringify(state))}catch(e){}}
 function go(id){
  const target=n(id); if(!target)return;
  document.querySelectorAll('.step').forEach(x=>x.classList.remove('active'));
@@ -184,29 +189,35 @@ function ph(id){return catalog.find(p=>p.id===id)}
 function selectRoute(id){state.selectedRoute=id;save();go('load')}
 function renderDriverRoutes(){
  const rs=state.routes.filter(r=>r.published);
- n('driverRoutes').innerHTML=rs.length?rs.map(r=>`<div class="card"><div class="row"><strong>${r.name}</strong><span class="status ok">${r.pharmacies.length} pharmacies</span></div><button class="btn dark" onclick="selectRoute('${r.id}')">SÉLECTIONNER</button></div>`).join(''):'<div class="notice warn">Aucune tournée publiée.</div>';
+ n('driverRoutes').innerHTML=rs.length?rs.map(r=>`<div class="card"><strong style="display:block;font-size:17px">${r.name}</strong><div class="meta" style="margin-top:6px">${r.pharmacies.length} pharmacie(s) affectée(s) à la tournée</div><button class="btn dark" onclick="selectRoute('${r.id}')">SÉLECTIONNER</button></div>`).join(''):'<div class="notice warn">Aucune tournée publiée.</div>';
 }
 function renderLoad(){
  const r=routeObj(); n('loadTitle').textContent=r?'Chargement · '+r.name:'Chargement';
- const ready=n('loadReady'),scanBox=n('loadScanBox');
+ const ready=n('loadReady'),scanBox=n('loadScanBox'),manualBox=n('manualLoadBox');
  if(!r){
    n('selectedRouteSummary').innerHTML='Sélectionne d’abord une tournée.';
-   if(scanBox)scanBox.style.display='none'; if(ready)ready.innerHTML=''; return;
+   if(scanBox)scanBox.style.display='none'; if(manualBox)manualBox.style.display='none'; if(ready)ready.innerHTML=''; return;
+ }
+ if(scanBox)scanBox.style.display='block';
+ if(manualBox){
+   manualBox.style.display='block';
+   manualBox.innerHTML=`<h3>Sélection manuelle d’une pharmacie</h3><div class="small">À utiliser si le QR code ne peut pas être scanné.</div><select id="manualPharmacyLoad" class="input">${r.pharmacies.map(pid=>`<option value="${pid}" ${pid===currentLoadPharmacy?'selected':''}>${ph(pid)?.name||pid}${state.load[pid]?.done?' — déjà traitée':''}</option>`).join('')}</select><button class="btn secondary" onclick="openManualLoadPharmacy()">OUVRIR LA PHARMACIE</button>`;
  }
  const doneCount=r.pharmacies.filter(pid=>state.load[pid]?.done).length;
  const noOrderIds=r.pharmacies.filter(pid=>state.load[pid]?.done&&state.load[pid]?.noOrder);
  const orderIds=r.pharmacies.filter(pid=>state.load[pid]?.done&&!state.load[pid]?.noOrder);
  const allDone=r.pharmacies.length>0&&doneCount===r.pharmacies.length;
- n('selectedRouteSummary').innerHTML=`<div class="row"><strong>${doneCount}/${r.pharmacies.length} pharmacies traitées</strong><span class="status ${allDone?'ok':'warn'}">${r.id}</span></div>
- <div class="meta" style="margin-top:8px">${r.pharmacies.map((id,i)=>{const d=state.load[id];let st='À charger';let cls='warn';if(d?.done&&d.noOrder){st='Sans commande';cls='warn'}else if(d?.done){st=(d.bins?.length||0)+' bac(s) · '+(d.parcels||0)+' colis';cls='ok'}return `<div class="row" style="padding:4px 0"><span>${i+1}. ${ph(id)?.name||id}</span><span class="status ${cls}">${st}</span></div>`}).join('')}</div>`;
- if(scanBox)scanBox.style.display=allDone?'none':'block';
+ n('selectedRouteSummary').innerHTML=`<strong>${doneCount}/${r.pharmacies.length} pharmacies traitées</strong>
+ <div class="meta" style="margin-top:8px">${r.pharmacies.map((id,i)=>{const d=state.load[id];let st='À charger';let cls='warn';if(d?.done&&d.noOrder){st='Sans commande';cls='warn'}else if(d?.done){st=(d.bins?.length||0)+' bac(s) · '+(d.parcels||0)+' colis';cls='ok'}return `<div class="row" style="padding:4px 0"><span>${i+1}. ${ph(id)?.name||id}</span><span><span class="status ${cls}">${st}</span> <button class="mini" onclick="openLoadPharmacyById('${id}')">Ouvrir</button></span></div>`}).join('')}</div>`;
  if(allDone){
    currentLoadPharmacy=null;n('activeLoadPharmacy').innerHTML='';
    ready.innerHTML=`<div class="card"><h3>Chargement terminé</h3><div class="notice ok">✅ ${orderIds.length} pharmacie(s) avec commande.</div>
-   ${noOrderIds.length?`<div class="notice warn"><strong>${noOrderIds.length} pharmacie(s) sans commande :</strong><br>${noOrderIds.map(pid=>'• '+(ph(pid)?.name||pid)).join('<br>')}<br><br>Elles seront automatiquement exclues de la tournée de livraison.</div>`:'<div class="notice info">Toutes les pharmacies de la tournée ont une commande.</div>'}
+   ${noOrderIds.length?`<div class="notice warn"><strong>${noOrderIds.length} pharmacie(s) sans commande :</strong><br>${noOrderIds.map(pid=>'• '+(ph(pid)?.name||pid)).join('<br>')}</div>`:'<div class="notice info">Toutes les pharmacies de la tournée ont une commande.</div>'}
    <button class="btn dark" onclick="startDeliveryTour()">DÉMARRER LA TOURNÉE DE LIVRAISON</button></div>`;
  }else if(ready)ready.innerHTML='';
 }
+function openManualLoadPharmacy(){const el=n('manualPharmacyLoad');if(el&&el.value)openLoadPharmacyById(el.value)}
+function openLoadPharmacyById(code){const input=n('pharmacyLoad');if(input)input.value=code;handlePharmacyLoad()}
 function handlePharmacyLoad(){
  const code=n('pharmacyLoad').value.trim().toUpperCase(),r=routeObj();
  if(!r){notice('loadNotice','Sélectionne une tournée.','warn');return}
@@ -223,7 +234,7 @@ function renderActiveLoad(){
  <div class="label">Scanner les bacs</div>
  <div class="scangrid"><button class="btn primary" onclick="smartScan('binLoad')">📷 Caméra</button><button class="btn secondary" onclick="focusZebra('binLoad')">🔫 Scan Zebra</button></div>
  <input id="binLoad" class="input" placeholder="BAC-000001" autocomplete="off"><button class="btn secondary" onclick="handleBinLoad()">AJOUTER LE BAC</button>
- <ul class="list">${d.bins.map(x=>'<li>✅ '+x+'</li>').join('')}</ul>
+ <ul class="list">${d.bins.map(x=>`<li><div class="row"><span>✅ ${x}</span><button class="mini" onclick="removeLoadedBin('${x}')">RETIRER</button></div></li>`).join('')}</ul>
  <div class="label">Colis hors bac</div><div class="counter"><button onclick="parcel(-1)">−</button><span>${d.parcels}</span><button onclick="parcel(1)">+</button></div>
  <button class="btn green" onclick="finishLoadPharmacy()">✓ TERMINER CETTE PHARMACIE</button>
  <button class="btn secondary" onclick="markNoOrder()">AUCUNE COMMANDE POUR CETTE PHARMACIE</button></div>`;
@@ -235,6 +246,14 @@ function handleBinLoad(){
  if(owner){notice('loadNotice','❌ '+code+' est déjà affecté à '+(ph(owner)?.name||owner)+'.','err');return}
  if(d.bins.includes(code)){notice('loadNotice','⚠️ Bac déjà scanné.','warn');return}
  d.bins.push(code); state.bins.available=state.bins.available.filter(x=>x!==code); save();input.value='';render();notice('loadNotice','✅ '+code+' chargé pour '+(ph(currentLoadPharmacy)?.name||currentLoadPharmacy)+'.','ok')
+}
+function removeLoadedBin(code){
+ if(!currentLoadPharmacy)return;
+ const d=state.load[currentLoadPharmacy];
+ if(!d||!d.bins.includes(code))return;
+ d.bins=d.bins.filter(x=>x!==code);
+ if(!state.bins.available.includes(code))state.bins.available.push(code);
+ d.done=false;d.noOrder=false;save();render();notice('loadNotice','↩ '+code+' retiré de '+(ph(currentLoadPharmacy)?.name||currentLoadPharmacy)+'.','info');
 }
 function parcel(delta){let d=state.load[currentLoadPharmacy];d.parcels=Math.max(0,d.parcels+delta);d.noOrder=false;d.done=false;save();renderActiveLoad()}
 function finishLoadPharmacy(){
@@ -253,7 +272,7 @@ function markNoOrder(){
  d.bins=[];d.parcels=0;d.done=true;d.noOrder=true;if(r)state.deliveryStarted[r.id]=false;save();
  const name=ph(pid)?.name||pid;currentLoadPharmacy=null;n('pharmacyLoad').value='';render();
  const next=r?.pharmacies.find(x=>!state.load[x]?.done);
- notice('loadNotice',next?'ℹ️ '+name+' marquée sans commande. Elle ne sera pas livrée. Scanne maintenant '+(ph(next)?.name||next)+'.':'ℹ️ '+name+' marquée sans commande. Toutes les pharmacies ont été traitées.','info');
+ notice('loadNotice',next?'ℹ️ '+name+' marquée sans commande. Scanne maintenant '+(ph(next)?.name||next)+'.':'ℹ️ '+name+' marquée sans commande. Toutes les pharmacies ont été traitées.','info');
 }
 function startDeliveryTour(){
  const r=routeObj();if(!r)return;
@@ -282,14 +301,16 @@ function openMaps(addr){location.href='https://www.waze.com/ul?q='+addr+'&naviga
 function confirmDeliveryPharmacy(){
  const code=n('pharmacyDelivery').value.trim().toUpperCase();
  if(code!==currentDeliveryPharmacy){notice('deliveryNotice','❌ Mauvaise pharmacie. Livraison bloquée.','err');return}
- state.delivered[code]=state.delivered[code]||{bins:[],parcels:0,returns:[],done:false}; save(); renderDeliveryScan(); notice('deliveryNotice','✅ Destination confirmée.','ok')
+ state.delivered[code]=state.delivered[code]||{bins:[],parcels:0,returns:[],done:false,manualBins:[]}; if(!Array.isArray(state.delivered[code].manualBins))state.delivered[code].manualBins=[]; save(); renderDeliveryScan(); notice('deliveryNotice','✅ Destination confirmée.','ok')
 }
 function renderDeliveryScan(){
  const p=ph(currentDeliveryPharmacy),load=state.load[currentDeliveryPharmacy],d=state.delivered[currentDeliveryPharmacy],held=state.bins.client[currentDeliveryPharmacy]||[];
+ if(!Array.isArray(d.manualBins))d.manualBins=[];
  n('nextDelivery').innerHTML+=`<div class="card"><h3>Livrer ${p.name}</h3>
- <div class="label">Bacs livrés</div><div class="scangrid"><button class="btn primary" onclick="smartScan('binDelivery')">📷 Caméra</button><button class="btn secondary" onclick="focusZebra('binDelivery')">🔫 Scan Zebra</button></div>
+ <div class="label">Bacs à livrer</div><div class="small">Scanner normalement le bac. Si le code-barres est illisible, utiliser « Livré manuellement » sur le bac concerné.</div>
+ <ul class="list">${load.bins.map(x=>{const delivered=d.bins.includes(x),manual=d.manualBins.includes(x);return `<li><div class="row"><span>${delivered?'✅':'⬜'} ${x}${manual?' <span class="small">(manuel)</span>':''}</span>${delivered?'<span class="status ok">Livré</span>':`<button class="mini add" onclick="manualDeliverBin('${x}')">LIVRÉ MANUELLEMENT</button>`}</div></li>`}).join('')||'<li>Aucun bac à livrer.</li>'}</ul>
+ <div class="scangrid"><button class="btn primary" onclick="smartScan('binDelivery')">📷 Caméra</button><button class="btn secondary" onclick="focusZebra('binDelivery')">🔫 Scan Zebra</button></div>
  <input id="binDelivery" class="input" placeholder="BAC-000001" autocomplete="off"><button class="btn secondary" onclick="handleBinDelivery()">LIVRER LE BAC</button>
- <ul class="list">${d.bins.map(x=>'<li>✅ '+x+'</li>').join('')}</ul>
  <div class="label">Colis livrés</div><div class="counter"><button onclick="delParcel(-1)">−</button><span>${d.parcels}</span><button onclick="delParcel(1)">+</button></div>
  <hr style="border:0;border-top:1px solid #eee;margin:14px 0">
  <h3>Bacs à récupérer (${held.length})</h3><div class="small">${held.join(', ')||'Aucun bac enregistré chez le client'}</div>
@@ -298,6 +319,14 @@ function renderDeliveryScan(){
  <ul class="list">${d.returns.map(x=>'<li>↩ '+x+'</li>').join('')}</ul>
  <button class="btn green" onclick="finishDelivery()">✓ VALIDER LA LIVRAISON</button></div>`;
  bindEnter('binDelivery',handleBinDelivery);bindEnter('binReturn',handleReturn);
+}
+function manualDeliverBin(code){
+ const d=state.delivered[currentDeliveryPharmacy],load=state.load[currentDeliveryPharmacy];
+ if(!d||!load||!load.bins.includes(code))return;
+ if(!d.bins.includes(code))d.bins.push(code);
+ if(!Array.isArray(d.manualBins))d.manualBins=[];
+ if(!d.manualBins.includes(code))d.manualBins.push(code);
+ save();render();renderDeliveryScan();notice('deliveryNotice','✅ '+code+' enregistré comme livré manuellement.','ok');
 }
 function handleBinDelivery(){let d=state.delivered[currentDeliveryPharmacy],load=state.load[currentDeliveryPharmacy],code=n('binDelivery').value.trim().toUpperCase();if(!code)return;if(!load.bins.includes(code)){notice('deliveryNotice','❌ '+code+' n’appartient pas à cette pharmacie.','err');return}if(!d.bins.includes(code))d.bins.push(code);n('binDelivery').value='';save();render();renderDeliveryScan()}
 function delParcel(delta){let d=state.delivered[currentDeliveryPharmacy];d.parcels=Math.max(0,d.parcels+delta);save();render();renderDeliveryScan()}
