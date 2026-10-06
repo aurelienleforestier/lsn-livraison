@@ -1,4 +1,4 @@
-LSN PHARMA — Livraison V5.1
+LSN PHARMA — Livraison V5.2
 
 Évolutions principales :
 - Historique Pharmacien enrichi avec heure de départ, heure de fin et durée réelle de chaque tournée ;
@@ -17,3 +17,6 @@ KPI et Historique restent réservés au profil Pharmacien.
 Prototype GitHub Pages : ne pas saisir de vrais codes d’alarme, porte ou interphone tant qu’une authentification et un stockage serveur sécurisés ne sont pas en place.
 
 Pour GitHub Pages : remplacer index.html, sw.js, manifest.webmanifest et README.txt à la racine du dépôt.
+
+
+V5.2 : une tournée n’est verrouillée qu’après un chargement réel (au moins un bac ou un colis) ou le démarrage de la livraison. Tant que rien n’est chargé, l’opérateur peut revenir à Tournées et en choisir une autre. Les anciens chargements résiduels sans tournée active sont nettoyés automatiquement et ne sont plus comptés comme « chargés ».

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
 <link rel="manifest" href="manifest.webmanifest">
-<title>LSN PHARMA Livraison V5.1</title>
+<title>LSN PHARMA Livraison V5.2</title>
 <style>
 :root{--bg:#f5f7f8;--card:#fff;--text:#111827;--muted:#667085;--blue:#2563eb;--green:#16a34a;--orange:#f59e0b;--red:#dc2626;--line:#e5e7eb}
 *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
@@ -45,7 +45,7 @@ h1{font-size:25px;margin:0 0 5px}h2{font-size:21px;margin:0 0 8px}h3{font-size:1
 </head>
 <body>
 <div class="app">
-<header><div class="logo">LSN <span>PHARMA</span></div><div style="display:flex;gap:6px;align-items:center"><div class="badge" id="userRoleBadge">Profil</div><div class="badge">V5.1 · Verrouillage & historique horaire</div></div></header>
+<header><div class="logo">LSN <span>PHARMA</span></div><div style="display:flex;gap:6px;align-items:center"><div class="badge" id="userRoleBadge">Profil</div><div class="badge">V5.2 · Verrouillage intelligent des tournées</div></div></header>
 <nav>
 <button data-go="home" class="active" onclick="go('home')">Tournées</button>
 <button data-go="load" onclick="go('load')">Chargement</button>
@@ -169,7 +169,7 @@ const defaultRoutes=[
 function n(id){return document.getElementById(id)}
 function notice(id,msg,type='info'){const el=n(id);if(el)el.innerHTML='<div class="notice '+type+'">'+msg+'</div>'}
 function freshState(){return {
- appVersion:51,
+ appVersion:52,
  currentUser:{id:'PHARMA-DEMO',name:'Pharmacien démo',role:'pharmacist'},
  routes:defaultRoutes.map(r=>({...r,pharmacies:[...r.pharmacies]})),
  selectedRoute:null,
@@ -192,12 +192,14 @@ function normalizeDelivered(d){d=d&&typeof d==='object'?d:{};return {bins:Array.
 function loadState(){
  let saved=null;
  try{
+   const raw52=localStorage.getItem('lsn-v52');
    const raw51=localStorage.getItem('lsn-v51');
    const raw50=localStorage.getItem('lsn-v50');
    const raw49=localStorage.getItem('lsn-v49');
    const raw48=localStorage.getItem('lsn-v48');
    const raw47=localStorage.getItem('lsn-v47');
-   if(raw51)saved=JSON.parse(raw51);
+   if(raw52)saved=JSON.parse(raw52);
+   else if(raw51)saved=JSON.parse(raw51);
    else if(raw50)saved=JSON.parse(raw50);
    else if(raw49)saved=JSON.parse(raw49);
    else if(raw48)saved=JSON.parse(raw48);
@@ -205,7 +207,7 @@ function loadState(){
    else {const raw46=localStorage.getItem('lsn-v46');if(raw46)saved=JSON.parse(raw46);else {const raw45=localStorage.getItem('lsn-v45');if(raw45)saved=JSON.parse(raw45)}}
  }catch(e){saved=null}
  if(saved&&Array.isArray(saved.routes)){
-   saved.appVersion=51;
+   saved.appVersion=52;
    saved.routes=saved.routes.filter(r=>r&&typeof r.id==='string').map(normalizeRoute);
    saved.selectedRoute=typeof saved.selectedRoute==='string'&&saved.routes.some(r=>r.id===saved.selectedRoute)?saved.selectedRoute:null;
    saved.adminSelectedRoute=typeof saved.adminSelectedRoute==='string'&&saved.routes.some(r=>r.id===saved.adminSelectedRoute)?saved.adminSelectedRoute:null;
@@ -225,6 +227,17 @@ function loadState(){
    saved.bins=saved.bins&&typeof saved.bins==='object'?saved.bins:freshState().bins;
    saved.bins.available=Array.isArray(saved.bins.available)?saved.bins.available:freshState().bins.available;
    saved.bins.client=saved.bins.client&&typeof saved.bins.client==='object'?saved.bins.client:{};
+   // Nettoyage V5.2 : un chargement sans tournée active est considéré comme résiduel.
+   const deliveryRid=Object.keys(saved.deliveryStarted||{}).find(rid=>saved.deliveryStarted[rid]===true)||null;
+   const selectedHasLoad=saved.selectedRoute&&Object.values(saved.loadByRoute?.[saved.selectedRoute]||{}).some(d=>(d?.bins||[]).length>0||(Number(d?.parcels)||0)>0);
+   const liveRid=deliveryRid||(selectedHasLoad?saved.selectedRoute:null);
+   const clientBins=new Set(Object.values(saved.bins.client||{}).flatMap(x=>Array.isArray(x)?x:[]));
+   for(const rid of Object.keys(saved.loadByRoute||{})){
+     if(rid===liveRid)continue;
+     const loads=saved.loadByRoute[rid]||{};
+     const orphanBins=Object.values(loads).flatMap(d=>Array.isArray(d?.bins)?d.bins:[]);
+     if(orphanBins.length){for(const b of orphanBins)if(!clientBins.has(b)&&!saved.bins.available.includes(b))saved.bins.available.push(b);delete saved.loadByRoute[rid];delete saved.deliveredByRoute[rid];delete saved.deliveryStarted[rid];delete saved.deliveryCursorByRoute[rid];delete saved.tourRunMeta[rid];}
+   }
    return saved;
  }
  let old=null;
@@ -241,11 +254,12 @@ function loadState(){
 }
 let state=loadState();
 let currentLoadPharmacy=null,currentDeliveryPharmacy=null,cameraTarget=null,stream=null,scanTimer=null,loadSubView='pending';
-function save(){try{localStorage.setItem('lsn-v51',JSON.stringify(state))}catch(e){}}
+function save(){try{localStorage.setItem('lsn-v52',JSON.stringify(state))}catch(e){}}
 function isPharmacist(){return state.currentUser?.role==='pharmacist'}
 function operatorName(){return state.currentUser?.name||state.currentUser?.id||'Utilisateur'}
 function activeDeliveryRouteId(){return Object.keys(state.deliveryStarted||{}).find(rid=>state.deliveryStarted[rid]===true)||null}
-function activeWorkflowRouteId(){return state.selectedRoute&&state.routes.some(r=>r.id===state.selectedRoute)?state.selectedRoute:null}
+function routeHasPhysicalLoad(rid){const loads=state.loadByRoute?.[rid]||{};return Object.values(loads).some(d=>(Array.isArray(d?.bins)&&d.bins.length>0)||(Number(d?.parcels)||0)>0)}
+function activeWorkflowRouteId(){const deliveryRid=activeDeliveryRouteId();if(deliveryRid)return deliveryRid;return state.selectedRoute&&state.routes.some(r=>r.id===state.selectedRoute)&&routeHasPhysicalLoad(state.selectedRoute)?state.selectedRoute:null}
 function applyRoleFromUrl(){try{const role=new URLSearchParams(location.search).get('role');if(role==='operator'||role==='pharmacist')state.currentUser={...(state.currentUser||{}),role,name:role==='pharmacist'?'Pharmacien démo':'Opérateur démo'};}catch(e){}}
 function renderAccess(){const k=n('kpiNav'),h=n('historyNav');if(k)k.style.display=isPharmacist()?'':'none';if(h)h.style.display=isPharmacist()?'':'none';const b=n('userRoleBadge');if(b)b.textContent=isPharmacist()?'Pharmacien':'Opérateur';if(!isPharmacist()&&['kpi','history'].includes(state.currentScreen))state.currentScreen='home'}
 function go(id){
@@ -470,7 +484,7 @@ function renderAdmin(){
  detail.innerHTML=`<button class="mini" onclick="closeAdminRoute()">← RETOUR AUX TOURNÉES</button><div class="card"><div class="admin-detail-title"><div><h3>${target.name}</h3><div class="small">${target.pharmacies.length} pharmacie(s)</div></div><span class="status ${target.published?'ok':'warn'}">${target.published?'Publiée':'Brouillon'}</span></div><button class="btn ${target.published?'secondary':'green'}" onclick="${target.published?`unpublish('${target.id}')`:`publish('${target.id}')`}">${target.published?'DÉPUBLIER LA TOURNÉE':'PUBLIER LA TOURNÉE'}</button></div><div class="notice warn">⚠️ Prototype public : ne pas saisir de vrais codes d’alarme ou d’accès tant qu’une authentification et un stockage sécurisé ne sont pas en place.</div><div class="card"><h3>Pharmacies affectées</h3>${assigned}</div><div class="card"><h3>Ajouter / retirer des pharmacies</h3>${pool}</div><button class="btn green" onclick="saveAdminRouteAndClose()">✓ ENREGISTRER</button>`;
 }
 function renderPark(){
- const activeLoaded=new Set();for(const [rid,loads] of Object.entries(state.loadByRoute||{})){const delivered=state.deliveredByRoute?.[rid]||{};Object.entries(loads||{}).forEach(([pid,d])=>{if(!d?.noOrder&&!delivered?.[pid]?.done)(d?.bins||[]).forEach(b=>activeLoaded.add(b))})}
+ const activeLoaded=new Set(),rid=activeWorkflowRouteId();if(rid){const loads=state.loadByRoute?.[rid]||{},delivered=state.deliveredByRoute?.[rid]||{};Object.entries(loads).forEach(([pid,d])=>{if(!d?.noOrder&&!delivered?.[pid]?.done)(d?.bins||[]).forEach(b=>activeLoaded.add(b))})}
  const client=Object.values(state.bins.client).reduce((a,x)=>a+(Array.isArray(x)?x.length:0),0);n('availableCount').textContent=state.bins.available.length;n('loadedCount').textContent=activeLoaded.size;n('clientCount').textContent=client;n('parkDetails').innerHTML=Object.entries(state.bins.client).filter(([,b])=>Array.isArray(b)&&b.length).map(([pid,b])=>`<div class="card"><strong>${ph(pid)?.name||pid}</strong><div class="meta">${b.length} bac(s) : ${b.join(', ')||'aucun'}</div></div>`).join('')||'<div class="small">Aucun bac actuellement enregistré chez un client.</div>';
 }
 function releaseBinToWarehouse(){
