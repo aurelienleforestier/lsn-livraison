@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
 <link rel="manifest" href="manifest.webmanifest">
-<title>LSN PHARMA Livraison V5.0</title>
+<title>LSN PHARMA Livraison V5.1</title>
 <style>
 :root{--bg:#f5f7f8;--card:#fff;--text:#111827;--muted:#667085;--blue:#2563eb;--green:#16a34a;--orange:#f59e0b;--red:#dc2626;--line:#e5e7eb}
 *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
@@ -45,7 +45,7 @@ h1{font-size:25px;margin:0 0 5px}h2{font-size:21px;margin:0 0 8px}h3{font-size:1
 </head>
 <body>
 <div class="app">
-<header><div class="logo">LSN <span>PHARMA</span></div><div style="display:flex;gap:6px;align-items:center"><div class="badge" id="userRoleBadge">Profil</div><div class="badge">V5.0 · Parc & historique</div></div></header>
+<header><div class="logo">LSN <span>PHARMA</span></div><div style="display:flex;gap:6px;align-items:center"><div class="badge" id="userRoleBadge">Profil</div><div class="badge">V5.1 · Verrouillage & historique horaire</div></div></header>
 <nav>
 <button data-go="home" class="active" onclick="go('home')">Tournées</button>
 <button data-go="load" onclick="go('load')">Chargement</button>
@@ -130,7 +130,8 @@ h1{font-size:25px;margin:0 0 5px}h2{font-size:21px;margin:0 0 8px}h3{font-size:1
 <p>Créer et gérer les tournées.</p>
 <div class="card">
 <h3>Créer une tournée</h3>
-<label class="label">Nom</label><input id="routeName" class="input" value="Tournée 03 — Essonne">
+<div class="small" style="margin-bottom:8px"><strong id="nextRouteNumber">Tournée 04</strong> <span>· numéro attribué automatiquement</span></div>
+<label class="label">Libellé (facultatif)</label><input id="routeName" class="input" value="" placeholder="Ex. Paris Sud">
 <button class="btn dark" onclick="createRoute()">CRÉER</button>
 </div>
 <div class="card"><h3>Tournées</h3><div id="adminRoutes"></div></div>
@@ -168,7 +169,7 @@ const defaultRoutes=[
 function n(id){return document.getElementById(id)}
 function notice(id,msg,type='info'){const el=n(id);if(el)el.innerHTML='<div class="notice '+type+'">'+msg+'</div>'}
 function freshState(){return {
- appVersion:50,
+ appVersion:51,
  currentUser:{id:'PHARMA-DEMO',name:'Pharmacien démo',role:'pharmacist'},
  routes:defaultRoutes.map(r=>({...r,pharmacies:[...r.pharmacies]})),
  selectedRoute:null,
@@ -191,18 +192,20 @@ function normalizeDelivered(d){d=d&&typeof d==='object'?d:{};return {bins:Array.
 function loadState(){
  let saved=null;
  try{
+   const raw51=localStorage.getItem('lsn-v51');
    const raw50=localStorage.getItem('lsn-v50');
    const raw49=localStorage.getItem('lsn-v49');
    const raw48=localStorage.getItem('lsn-v48');
    const raw47=localStorage.getItem('lsn-v47');
-   if(raw50)saved=JSON.parse(raw50);
+   if(raw51)saved=JSON.parse(raw51);
+   else if(raw50)saved=JSON.parse(raw50);
    else if(raw49)saved=JSON.parse(raw49);
    else if(raw48)saved=JSON.parse(raw48);
    else if(raw47)saved=JSON.parse(raw47);
    else {const raw46=localStorage.getItem('lsn-v46');if(raw46)saved=JSON.parse(raw46);else {const raw45=localStorage.getItem('lsn-v45');if(raw45)saved=JSON.parse(raw45)}}
  }catch(e){saved=null}
  if(saved&&Array.isArray(saved.routes)){
-   saved.appVersion=50;
+   saved.appVersion=51;
    saved.routes=saved.routes.filter(r=>r&&typeof r.id==='string').map(normalizeRoute);
    saved.selectedRoute=typeof saved.selectedRoute==='string'&&saved.routes.some(r=>r.id===saved.selectedRoute)?saved.selectedRoute:null;
    saved.adminSelectedRoute=typeof saved.adminSelectedRoute==='string'&&saved.routes.some(r=>r.id===saved.adminSelectedRoute)?saved.adminSelectedRoute:null;
@@ -238,20 +241,20 @@ function loadState(){
 }
 let state=loadState();
 let currentLoadPharmacy=null,currentDeliveryPharmacy=null,cameraTarget=null,stream=null,scanTimer=null,loadSubView='pending';
-function save(){try{localStorage.setItem('lsn-v50',JSON.stringify(state))}catch(e){}}
+function save(){try{localStorage.setItem('lsn-v51',JSON.stringify(state))}catch(e){}}
 function isPharmacist(){return state.currentUser?.role==='pharmacist'}
 function operatorName(){return state.currentUser?.name||state.currentUser?.id||'Utilisateur'}
 function activeDeliveryRouteId(){return Object.keys(state.deliveryStarted||{}).find(rid=>state.deliveryStarted[rid]===true)||null}
-function operatorDeliveryLockRouteId(){return isPharmacist()?null:activeDeliveryRouteId()}
+function activeWorkflowRouteId(){return state.selectedRoute&&state.routes.some(r=>r.id===state.selectedRoute)?state.selectedRoute:null}
 function applyRoleFromUrl(){try{const role=new URLSearchParams(location.search).get('role');if(role==='operator'||role==='pharmacist')state.currentUser={...(state.currentUser||{}),role,name:role==='pharmacist'?'Pharmacien démo':'Opérateur démo'};}catch(e){}}
 function renderAccess(){const k=n('kpiNav'),h=n('historyNav');if(k)k.style.display=isPharmacist()?'':'none';if(h)h.style.display=isPharmacist()?'':'none';const b=n('userRoleBadge');if(b)b.textContent=isPharmacist()?'Pharmacien':'Opérateur';if(!isPharmacist()&&['kpi','history'].includes(state.currentScreen))state.currentScreen='home'}
 function go(id){
  if(['kpi','history'].includes(id)&&!isPharmacist()){alert('Accès réservé au profil Pharmacien.');id='home'}
- const lockedRid=operatorDeliveryLockRouteId();
- if(lockedRid&&id==='delivery')state.selectedRoute=lockedRid;
- if(lockedRid&&id==='load'){
+ const lockedRid=activeWorkflowRouteId();
+ if(lockedRid&&state.deliveryStarted?.[lockedRid]&&id==='delivery')state.selectedRoute=lockedRid;
+ if(lockedRid&&state.deliveryStarted?.[lockedRid]&&id==='load'){
    state.selectedRoute=lockedRid;
-   alert('Une tournée est en cours de livraison. Termine-la avant de revenir au chargement.');
+   alert('La tournée est en cours de livraison. Termine-la avant de revenir au chargement.');
    id='delivery';
  }
  const target=n(id);if(!target)return;
@@ -273,20 +276,22 @@ function setPharmacyAccess(pid,field,value){if(!state.pharmacyMeta||typeof state
 function routeLoad(rid=state.selectedRoute){if(!rid)return {};if(!state.loadByRoute[rid]||typeof state.loadByRoute[rid]!=='object')state.loadByRoute[rid]={};return state.loadByRoute[rid]}
 function routeDelivered(rid=state.selectedRoute){if(!rid)return {};if(!state.deliveredByRoute[rid]||typeof state.deliveredByRoute[rid]!=='object')state.deliveredByRoute[rid]={};return state.deliveredByRoute[rid]}
 function selectRoute(id){
- const lockedRid=operatorDeliveryLockRouteId();
+ const lockedRid=activeWorkflowRouteId();
  if(lockedRid){
    state.selectedRoute=lockedRid;save();
-   if(id!==lockedRid)alert('Impossible de sélectionner une autre tournée : une livraison est encore en cours.');
-   go('delivery');return;
+   if(id!==lockedRid)alert('Impossible de sélectionner une autre tournée tant que la tournée en cours n’est pas clôturée.');
+   go(state.deliveryStarted?.[lockedRid]?'delivery':'load');return;
  }
  state.selectedRoute=id;currentLoadPharmacy=null;currentDeliveryPharmacy=null;loadSubView='pending';save();go('load')
 }
 function renderDriverRoutes(){
- const rs=state.routes.filter(r=>r.published),lockedRid=operatorDeliveryLockRouteId();
- const lockNotice=lockedRid?`<div class="notice warn">Une tournée est en cours de livraison. Termine-la avant de sélectionner ou charger une autre tournée.</div>`:'';
+ const rs=state.routes.filter(r=>r.published),lockedRid=activeWorkflowRouteId();
+ const deliveryLocked=lockedRid&&state.deliveryStarted?.[lockedRid];
+ const lockNotice=lockedRid?`<div class="notice warn">Une tournée est en cours. Elle doit être clôturée avant de sélectionner une autre tournée.</div>`:'';
  n('driverRoutes').innerHTML=lockNotice+(rs.length?rs.map(r=>{
    const locked=!!lockedRid,active=lockedRid===r.id;
-   const action=active?`<button class="btn dark" onclick="selectRoute('${r.id}')">REPRENDRE LA LIVRAISON</button>`:locked?`<button class="btn secondary" disabled>INDISPONIBLE PENDANT LA LIVRAISON</button>`:`<button class="btn dark" onclick="selectRoute('${r.id}')">SÉLECTIONNER</button>`;
+   const activeLabel=deliveryLocked?'REPRENDRE LA LIVRAISON':'REPRENDRE LE CHARGEMENT';
+   const action=active?`<button class="btn dark" onclick="selectRoute('${r.id}')">${activeLabel}</button>`:locked?`<button class="btn secondary" disabled>INDISPONIBLE — TOURNÉE EN COURS</button>`:`<button class="btn dark" onclick="selectRoute('${r.id}')">SÉLECTIONNER</button>`;
    return `<div class="card"><strong style="display:block;font-size:17px">${r.name}</strong><div class="meta" style="margin-top:6px">${r.pharmacies.length} pharmacie(s) affectée(s) à la tournée</div>${action}</div>`
  }).join(''):'<div class="notice warn">Aucune tournée publiée.</div>');
 }
@@ -423,7 +428,7 @@ function reopenDelivery(pid){
  const targets=deliveryTargets(r),idx=targets.indexOf(pid);if(idx>=0)state.deliveryCursorByRoute[r.id]=idx;currentDeliveryPharmacy=pid;save();renderDelivery();
 }
 function finishDelivery(){
- const r=routeObj();if(!r||!currentDeliveryPharmacy)return;const pid=currentDeliveryPharmacy,load=routeLoad(r.id)[pid],delivered=routeDelivered(r.id);delivered[pid]=normalizeDelivered(delivered[pid]);const d=delivered[pid];if(d.done)return;
+ const r=routeObj();if(!r||!currentDeliveryPharmacy)return;const pid=currentDeliveryPharmacy,load=routeLoad(r.id)[pid],delivered=routeDelivered(r.id);delivered[pid]=normalizeDelivered(delivered[pid]);const d=delivered[pid];if(d.done)return;stampFirstAction(d);
  const held=state.bins.client[pid]||[];if(d.heldBeforeCount===null)d.heldBeforeCount=held.length;if(!d.heldBeforeBins?.length)d.heldBeforeBins=[...held];
  const wrongReturns=d.returns.filter(x=>!held.includes(x)),validReturns=d.returns.filter(x=>held.includes(x));
  const confirmationDiffs=[];if(d.bins.length!==load.bins.length)confirmationDiffs.push(`${d.bins.length}/${load.bins.length} bacs`);if(d.parcels!==load.parcels)confirmationDiffs.push(`${d.parcels}/${load.parcels} colis`);if(confirmationDiffs.length&&!confirm('⚠️ Écart entre chargement et livraison : '+confirmationDiffs.join(' · ')+'. Confirmer la livraison avec cet écart ?'))return;
@@ -440,7 +445,9 @@ function closeAndResetTour(){
  state.tourHistory.push({id:meta.runId||('RUN-'+endedAt+'-'+r.id),routeId:r.id,routeName:r.name,operatorId:meta.operator?.id||state.currentUser?.id||'',operatorName:meta.operator?.name||operatorName(),startedAt:meta.startedAt||endedAt,endedAt,durationMinutes:minutesBetween(meta.startedAt||endedAt,endedAt)||0,pharmacies:records.length,anomalies:records.reduce((a,x)=>a+x.anomalies,0),manualBins:records.reduce((a,x)=>a+x.manualBins,0),skips:records.reduce((a,x)=>a+x.skips,0),records});
  delete state.loadByRoute[r.id];delete state.deliveredByRoute[r.id];delete state.tourRunMeta[r.id];state.deliveryStarted[r.id]=false;state.deliveryCursorByRoute[r.id]=0;currentLoadPharmacy=null;currentDeliveryPharmacy=null;loadSubView='pending';state.selectedRoute=null;state.currentScreen='home';save();go('home');
 }
-function createRoute(){let id='T'+String(Math.max(0,...state.routes.map(r=>parseInt(r.id.slice(1))||0))+1).padStart(2,'0');state.routes.push({id,name:n('routeName').value.trim()||id,published:false,pharmacies:[]});state.adminSelectedRoute=id;save();renderAdmin()}
+function nextRouteId(){return 'T'+String(Math.max(0,...state.routes.map(r=>parseInt(r.id.slice(1))||0))+1).padStart(2,'0')}
+function routeNumberLabel(id){return 'Tournée '+String(parseInt(String(id).replace(/\D/g,''))||0).padStart(2,'0')}
+function createRoute(){const id=nextRouteId(),label=n('routeName').value.trim(),name=routeNumberLabel(id)+(label?' — '+label:'');state.routes.push({id,name,published:false,pharmacies:[]});n('routeName').value='';state.adminSelectedRoute=id;save();renderAdmin()}
 function selectAdminRoute(rid){if(!state.routes.some(r=>r.id===rid))return;state.adminSelectedRoute=rid;save();renderAdmin()}
 function closeAdminRoute(){state.adminSelectedRoute=null;save();renderAdmin()}
 function saveAdminRouteAndClose(){state.adminSelectedRoute=null;save();renderAdmin();renderDriverRoutes()}
@@ -454,10 +461,11 @@ function renderAdmin(){
  if(!target){
    state.adminSelectedRoute=null;if(main)main.style.display='block';if(detail){detail.style.display='none';detail.innerHTML=''};
    n('adminRoutes').innerHTML=state.routes.map(r=>`<div class="admin-route"><div class="row"><div><strong>${r.name}</strong><div class="small">${r.pharmacies.length} pharmacie(s)</div></div><span class="status ${r.published?'ok':'warn'}">${r.published?'Publiée':'Brouillon'}</span></div><button class="btn secondary admin-main-actions" onclick="selectAdminRoute('${r.id}')">GÉRER CETTE TOURNÉE</button></div>`).join('');
+   const next=n('nextRouteNumber');if(next)next.textContent=routeNumberLabel(nextRouteId());
    return;
  }
  if(main)main.style.display='none';if(detail)detail.style.display='block';
- const assigned=target.pharmacies.map((pid,i)=>{const a=pharmacyAccess(pid);return `<div class="ph"><div class="row"><span><b>${i+1}. ${ph(pid)?.name||pid}</b><br><span class="small">${ph(pid)?.address||''}</span></span><span><button class="mini" onclick="movePh('${pid}','${target.id}',-1)">↑</button> <button class="mini" onclick="movePh('${pid}','${target.id}',1)">↓</button> <button class="mini" onclick="removePh('${pid}','${target.id}')">×</button></span></div><div class="ph-admin-meta"><div class="small"><strong>Code pharmacie :</strong> ${pid}</div><label class="label">Code porte (facultatif)</label><input class="input" value="${escAttr(a.doorCode)}" placeholder="Ex. 2580A" onchange="setPharmacyAccess('${pid}','doorCode',this.value)"><label class="label">Interphone (facultatif)</label><input class="input" value="${escAttr(a.intercom)}" placeholder="Ex. Pharmacie / 12B" onchange="setPharmacyAccess('${pid}','intercom',this.value)"><label class="label">Code alarme (facultatif)</label><input class="input" value="${escAttr(a.alarmCode)}" placeholder="Prototype : ne pas saisir un vrai code" onchange="setPharmacyAccess('${pid}','alarmCode',this.value)"><label class="label">Instructions d'accès (facultatif)</label><input class="input" value="${escAttr(a.instructions)}" placeholder="Ex. clé dans boîte sécurisée..." onchange="setPharmacyAccess('${pid}','instructions',this.value)"></div></div>`}).join('')||'<div class="small">Aucune pharmacie.</div>';
+ const assigned=target.pharmacies.map((pid,i)=>{const a=pharmacyAccess(pid);return `<div class="ph"><div class="row"><span><b>${i+1}. ${ph(pid)?.name||pid}</b><br><span class="small">${ph(pid)?.address||''}</span></span><span><button class="mini" onclick="movePh('${pid}','${target.id}',-1)">↑</button> <button class="mini" onclick="movePh('${pid}','${target.id}',1)">↓</button> <button class="mini" onclick="removePh('${pid}','${target.id}')">×</button></span></div><div class="ph-admin-meta"><label class="label">Code porte (facultatif)</label><input class="input" value="${escAttr(a.doorCode)}" placeholder="Ex. 2580A" onchange="setPharmacyAccess('${pid}','doorCode',this.value)"><label class="label">Interphone (facultatif)</label><input class="input" value="${escAttr(a.intercom)}" placeholder="Ex. Pharmacie / 12B" onchange="setPharmacyAccess('${pid}','intercom',this.value)"><label class="label">Code alarme (facultatif)</label><input class="input" value="${escAttr(a.alarmCode)}" placeholder="Prototype : ne pas saisir un vrai code" onchange="setPharmacyAccess('${pid}','alarmCode',this.value)"><label class="label">Instructions d'accès (facultatif)</label><input class="input" value="${escAttr(a.instructions)}" placeholder="Ex. clé dans boîte sécurisée..." onchange="setPharmacyAccess('${pid}','instructions',this.value)"></div></div>`}).join('')||'<div class="small">Aucune pharmacie.</div>';
  const pool=catalog.map(p=>{const inRoute=target.pharmacies.includes(p.id);return `<div class="ph"><div class="row"><span><b>${p.name}</b><br><span class="small">${p.id}</span></span>${inRoute?'<span class="status ok">Ajoutée</span>':`<button class="mini add" onclick="addPh('${p.id}','${target.id}')">AJOUTER</button>`}</div></div>`}).join('');
  detail.innerHTML=`<button class="mini" onclick="closeAdminRoute()">← RETOUR AUX TOURNÉES</button><div class="card"><div class="admin-detail-title"><div><h3>${target.name}</h3><div class="small">${target.pharmacies.length} pharmacie(s)</div></div><span class="status ${target.published?'ok':'warn'}">${target.published?'Publiée':'Brouillon'}</span></div><button class="btn ${target.published?'secondary':'green'}" onclick="${target.published?`unpublish('${target.id}')`:`publish('${target.id}')`}">${target.published?'DÉPUBLIER LA TOURNÉE':'PUBLIER LA TOURNÉE'}</button></div><div class="notice warn">⚠️ Prototype public : ne pas saisir de vrais codes d’alarme ou d’accès tant qu’une authentification et un stockage sécurisé ne sont pas en place.</div><div class="card"><h3>Pharmacies affectées</h3>${assigned}</div><div class="card"><h3>Ajouter / retirer des pharmacies</h3>${pool}</div><button class="btn green" onclick="saveAdminRouteAndClose()">✓ ENREGISTRER</button>`;
 }
@@ -511,10 +519,14 @@ function renderHistory(){
  results.innerHTML=Object.keys(byDay).sort().reverse().map(day=>{
    const runs=Object.values(byDay[day]);
    const routesHtml=runs.map(run=>{
-     const routeWhen=run.endedAt?`Terminée à ${new Date(run.endedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`:'Tournée en cours';
+     const startTime=run.startedAt?new Date(run.startedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—';
+     const endTime=run.endedAt?new Date(run.endedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—';
+     const duration=run.startedAt?fmtMin(minutesBetween(run.startedAt,run.endedAt||Date.now())):'—';
+     const routeWhen=run.endedAt?`Départ ${startTime} · Fin ${endTime} · Durée ${duration}`:`Départ ${startTime} · En cours · Durée ${duration}`;
      const pharmacies=run.rows.map(x=>{
        const parcelDiff=(x.loadedParcels||0)!==(x.deliveredParcels||0),binDiff=(x.loadedBins||0)!==(x.deliveredBins||0),hasDiff=parcelDiff||binDiff||(x.wrongReturns||0)>0;
-       return `<details class="ph"><summary><strong>${x.pharmacyName}</strong> <span class="small">· ${x.pharmacyId} · ${x.deliveredBins||0} bac(s) · ${x.deliveredParcels||0} colis ${hasDiff?'⚠️':''}</span></summary><div class="history-line">Livraison : <strong>${x.completedAt?new Date(x.completedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—'}</strong></div><div class="history-line">Chargé : <strong>${x.loadedBins||0} bac(s) + ${x.loadedParcels||0} colis</strong></div><div class="history-line">Livré : <strong>${x.deliveredBins||0} bac(s) + ${x.deliveredParcels||0} colis</strong></div><div class="history-line"><strong>Bacs chargés :</strong> <span class="mono">${(x.loadedBinIds||[]).join(', ')||'aucun'}</span></div><div class="history-line"><strong>Bacs livrés :</strong> <span class="mono">${(x.deliveredBinIds||[]).join(', ')||'aucun'}</span></div><div class="history-line"><strong>Bacs restitués :</strong> <span class="mono">${(x.returnedBinIds||[]).join(', ')||'aucun'}</span></div>${(x.manualBinIds||[]).length?`<div class="history-line"><strong>Validations manuelles :</strong> <span class="mono">${x.manualBinIds.join(', ')}</span></div>`:''}${x.skips?`<div class="history-line"><strong>Pharmacie sautée/reprise :</strong> ${x.skips} fois</div>`:''}</details>`
+       const passageAt=x.firstActionAt||x.completedAt;
+       return `<details class="ph"><summary><strong>${x.pharmacyName}</strong> <span class="small">· ${x.pharmacyId} · passage ${passageAt?new Date(passageAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—'} · ${x.deliveredBins||0} bac(s) · ${x.deliveredParcels||0} colis ${hasDiff?'⚠️':''}</span></summary><div class="history-line">Heure de passage : <strong>${passageAt?new Date(passageAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—'}</strong></div><div class="history-line">Livraison validée : <strong>${x.completedAt?new Date(x.completedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—'}</strong></div><div class="history-line">Chargé : <strong>${x.loadedBins||0} bac(s) + ${x.loadedParcels||0} colis</strong></div><div class="history-line">Livré : <strong>${x.deliveredBins||0} bac(s) + ${x.deliveredParcels||0} colis</strong></div><div class="history-line"><strong>Bacs chargés :</strong> <span class="mono">${(x.loadedBinIds||[]).join(', ')||'aucun'}</span></div><div class="history-line"><strong>Bacs livrés :</strong> <span class="mono">${(x.deliveredBinIds||[]).join(', ')||'aucun'}</span></div><div class="history-line"><strong>Bacs restitués :</strong> <span class="mono">${(x.returnedBinIds||[]).join(', ')||'aucun'}</span></div>${(x.manualBinIds||[]).length?`<div class="history-line"><strong>Validations manuelles :</strong> <span class="mono">${x.manualBinIds.join(', ')}</span></div>`:''}${x.skips?`<div class="history-line"><strong>Pharmacie sautée/reprise :</strong> ${x.skips} fois</div>`:''}</details>`
      }).join('');
      return `<details class="history-card" ${q?'open':''}><summary><strong>${run.routeName}</strong> <span class="small">· ${run.operatorName||'—'} · ${run.rows.length} pharmacie(s)</span></summary><div class="small" style="margin:8px 0">${routeWhen}</div>${pharmacies}</details>`
    }).join('');
@@ -578,7 +590,7 @@ async function smartScan(target){
 }
 
 function openNativeCapture(target){
-  alert("Cette V4 utilise uniquement le scan live HTTPS.");
+  alert("Cette application utilise uniquement le scan live HTTPS.");
 }
 
 async function openCamera(target){

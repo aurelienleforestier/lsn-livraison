@@ -1,17 +1,18 @@
-LSN PHARMA — Livraison V5.0
+LSN PHARMA — Livraison V5.1
 
 Évolutions principales :
-- Historique simplifié et hiérarchisé : Jour > Tournée > Pharmacie ;
-- KPI et Historique visibles uniquement avec le profil Pharmacien ;
-- suppression du KPI « réel vs Waze » / ETA théorique ;
-- règle stricte d’unicité des bacs : un bac déjà chez une pharmacie ne peut pas être chargé pour une autre ;
-- un bac déjà affecté à un chargement actif ne peut pas être affecté ailleurs ;
-- nouveau module « Restitué à l’entrepôt » dans Parc bacs pour corriger un oubli de scan de restitution ;
-- la régularisation remet le bac en stock disponible et conserve une trace de l’ajustement ;
-- un profil Opérateur/Livreur ayant une tournée en cours de livraison ne peut ni charger ni sélectionner une autre tournée avant clôture ;
-- la tournée active peut être reprise directement depuis l’écran Tournées ;
-- à la clôture, l’état opérationnel de la tournée est remis à zéro, tandis que le parc de bacs et l’historique restent conservés ;
-- les fonctions V4.9 restent présentes : correction d’une livraison avant clôture, historique détaillé, anomalies, saisies manuelles, codes d’accès pharmacie, bouton ENREGISTRER du Back-office.
+- Historique Pharmacien enrichi avec heure de départ, heure de fin et durée réelle de chaque tournée ;
+- heure de passage et heure de validation affichées pour chaque pharmacie ;
+- une tournée sélectionnée pour le chargement devient la tournée opérationnelle active : aucune autre tournée ne peut être sélectionnée avant sa clôture ;
+- dès que le mode Livraison a commencé, l’onglet Chargement renvoie vers la livraison en cours jusqu’à la clôture ;
+- écran Tournées : seule la tournée active peut être reprise, les autres sont indisponibles pendant l’opération ;
+- création de tournée avec numérotation automatique incrémentale : Tournée 01, 02, 03, 04, etc. ;
+- le champ de création ne sert plus qu’à saisir un libellé facultatif (ex. Paris Sud) ;
+- suppression de l’affichage « Code pharmacie : PH-xxxxxx » dans la fiche de gestion d’une tournée du Back-office ;
+- le code pharmacie reste disponible en mode Livraison pour l’identification terrain ;
+- conservation de toutes les règles V5.0 : historique Jour > Tournée > Pharmacie, unicité stricte des bacs, libération « Restitué à l’entrepôt », parc de bacs persistant et remise à zéro opérationnelle à la clôture.
+
+KPI et Historique restent réservés au profil Pharmacien.
 
 Prototype GitHub Pages : ne pas saisir de vrais codes d’alarme, porte ou interphone tant qu’une authentification et un stockage serveur sécurisés ne sont pas en place.
 
