@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<link rel="manifest" href="manifest.webmanifest">
+<title>LSN PHARMA Livraison V4</title>
+<style>
+:root{--bg:#f5f7f8;--card:#fff;--text:#111827;--muted:#667085;--blue:#2563eb;--green:#16a34a;--orange:#f59e0b;--red:#dc2626;--line:#e5e7eb}
+*{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
+.app{max-width:520px;margin:auto;min-height:100vh;background:#fff}
+header{padding:16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;z-index:20}
+.logo{font-weight:900}.logo span{font-weight:600}.badge{font-size:12px;background:#eef2ff;color:#3730a3;padding:6px 9px;border-radius:999px}
+nav{display:flex;gap:6px;overflow:auto;padding:9px 12px;border-bottom:1px solid var(--line);position:sticky;top:57px;background:#fff;z-index:19}
+nav button{border:0;background:#f3f4f6;padding:8px 10px;border-radius:999px;white-space:nowrap;font-weight:700;font-size:12px}
+nav button.active{background:#111827;color:#fff} main{padding:16px}
+.step{display:none}.step.active{display:block}
+h1{font-size:25px;margin:0 0 5px}h2{font-size:21px;margin:0 0 8px}h3{font-size:15px;margin:0 0 6px}p,.muted{color:var(--muted)}
+.card{border:1px solid var(--line);border-radius:16px;padding:14px;margin:11px 0;background:#fff}
+.row{display:flex;justify-content:space-between;gap:10px;align-items:center}.meta{font-size:13px;color:var(--muted)}
+.btn{width:100%;border:0;border-radius:14px;padding:14px 15px;font-size:16px;font-weight:800;margin-top:9px}
+.primary{background:var(--blue);color:#fff}.dark{background:#111827;color:#fff}.green{background:var(--green);color:#fff}.secondary{background:#f3f4f6;color:#111827}.danger{background:#fee2e2;color:#991b1b}
+.input{width:100%;padding:13px;border:1px solid var(--line);border-radius:12px;font-size:16px;margin-top:7px}
+.label{font-size:13px;font-weight:800;margin-top:11px}.status{font-size:12px;padding:5px 8px;border-radius:999px;background:#f3f4f6}
+.status.ok{background:#dcfce7;color:#166534}.status.warn{background:#ffedd5;color:#9a3412}
+.notice{padding:12px;border-radius:12px;margin:10px 0;font-size:14px;font-weight:700}.notice.ok{background:#dcfce7;color:#166534}.notice.err{background:#fee2e2;color:#991b1b}.notice.warn{background:#ffedd5;color:#9a3412}.notice.info{background:#dbeafe;color:#1e40af}
+.scanbox{border:2px dashed #93c5fd;background:#eff6ff;border-radius:18px;padding:15px;margin:12px 0}
+.scangrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.small{font-size:12px;color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.kpi{border:1px solid var(--line);border-radius:13px;padding:11px;text-align:center}.kpi b{font-size:21px;display:block}
+.list{padding:0;margin:8px 0;list-style:none}.list li{padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:14px}
+.counter{display:flex;gap:10px;align-items:center}.counter button{width:44px;height:44px;border:0;border-radius:12px;font-size:22px}.counter span{font-size:24px;font-weight:900;min-width:30px;text-align:center}
+.camera{display:none;position:fixed;inset:0;background:#000;z-index:100;padding:0}.camera.open{display:flex;flex-direction:column}
+.camera video{width:100%;height:calc(100vh - 140px);object-fit:cover;background:#000}
+.camtop,.cambottom{padding:12px;background:#111827;color:#fff}.camtop{display:flex;justify-content:space-between;align-items:center}.camtop button{border:0;border-radius:10px;padding:9px 12px;font-weight:800}
+.target{position:absolute;left:12%;right:12%;top:35%;height:28%;border:3px solid white;border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,.25);pointer-events:none}
+.ph{padding:10px 0;border-bottom:1px solid #f1f5f9}.admin-route{border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:10px}.selected{border:2px solid var(--blue)}
+.mini{border:0;background:#f3f4f6;border-radius:9px;padding:7px 9px;font-weight:700}.mini.add{background:#dcfce7;color:#166534}
+</style>
+<script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
+</head>
+<body>
+<div class="app">
+<header><div class="logo">LSN <span>PHARMA</span></div><div class="badge">V4 · Scanner live HTTPS</div></header>
+<nav>
+<button data-go="home" class="active">Tournées</button>
+<button data-go="load">Chargement</button>
+<button data-go="delivery">Livraison</button>
+<button data-go="park">Parc bacs</button>
+<button data-go="admin">Back-office</button>
+</nav>
+<main>
+<section id="home" class="step active">
+<h1>Tournées disponibles</h1><p>Seules les tournées publiées apparaissent ici.</p>
+<div id="driverRoutes"></div>
+</section>
+
+<section id="load" class="step">
+<h2 id="loadTitle">Chargement</h2>
+<div id="selectedRouteSummary" class="card"></div>
+<div class="scanbox">
+<h3>1. Scanner le QR de la pharmacie</h3>
+<div class="small" style="margin-bottom:6px">📱 Scan direct : QR pharmacie et Code 128 des bacs via caméra arrière.</div>
+<div class="scangrid">
+<button class="btn primary" onclick="smartScan('pharmacyLoad')">📷 Caméra</button>
+<button class="btn secondary" onclick="focusZebra('pharmacyLoad')">🔫 Scan Zebra</button>
+</div>
+<input id="pharmacyLoad" class="input" placeholder="QR pharmacie ou scan Zebra" autocomplete="off">
+<button class="btn secondary" onclick="handlePharmacyLoad()">VALIDER LE CODE</button>
+</div>
+<div id="activeLoadPharmacy"></div>
+<div id="loadNotice"></div>
+</section>
+
+<section id="delivery" class="step">
+<h2>Livraison</h2>
+<div id="nextDelivery"></div>
+<div id="deliveryNotice"></div>
+</section>
+
+<section id="park" class="step">
+<h2>Parc de bacs</h2>
+<div class="kpis">
+<div class="kpi"><b id="availableCount">20</b><span class="small">disponibles</span></div>
+<div class="kpi"><b id="loadedCount">0</b><span class="small">chargés</span></div>
+<div class="kpi"><b id="clientCount">5</b><span class="small">chez clients</span></div>
+</div>
+<div id="parkDetails"></div>
+</section>
+
+<section id="admin" class="step">
+<h2>Back-office</h2>
+<p>Créer, composer et publier les tournées.</p>
+<div class="card">
+<h3>Créer une tournée</h3>
+<label class="label">Nom</label><input id="routeName" class="input" value="Tournée 03 — Essonne">
+<label class="label">Livreur</label><input id="routeDriver" class="input" value="Julien">
+<label class="label">Véhicule</label><input id="routeVehicle" class="input" value="MASTER 01">
+<label class="label">Départ prévu</label><input id="routeDeparture" class="input" value="05:45">
+<button class="btn dark" onclick="createRoute()">CRÉER</button>
+</div>
+<div class="card"><h3>Pharmacies fictives</h3><div id="pharmacyPool"></div></div>
+<div class="card"><h3>Tournées</h3><div id="adminRoutes"></div></div>
+</section>
+</main>
+</div>
+
+<div id="camera" class="camera">
+<div class="camtop"><strong id="camTitle">Scanner</strong><button onclick="closeCamera()">Fermer</button></div>
+<video id="video" playsinline></video><div class="target"></div>
+<div class="cambottom">
+<div id="camStatus">Place le code dans le cadre.</div>
+<button class="btn secondary" onclick="closeCamera()">ANNULER</button>
+</div>
+</div>
+
+<script>
+const catalog=[
+{id:'PH-001458',name:'Pharmacie Centrale Massy',address:'12 avenue de Paris, 91300 Massy'},
+{id:'PH-001459',name:'Pharmacie du Marché',address:'8 place du Marché, 91300 Massy'},
+{id:'PH-001460',name:'Pharmacie des Écoles',address:'24 rue des Écoles, 91300 Massy'},
+{id:'PH-001461',name:'Pharmacie Pasteur',address:'6 avenue Pasteur, 91300 Massy'},
+{id:'PH-001462',name:'Pharmacie Atlantis',address:'18 avenue de Paris, 91300 Massy'},
+{id:'PH-001463',name:'Pharmacie Vilmorin',address:'35 avenue du Président Kennedy, 91300 Massy'},
+{id:'PH-001464',name:'Pharmacie Opéra',address:'3 place de France, 91300 Massy'},
+{id:'PH-001465',name:'Pharmacie Verrières',address:'10 rue d’Estienne d’Orves, 91370 Verrières-le-Buisson'}
+];
+const defaultRoutes=[
+{id:'T01',name:'Tournée 01 — Paris Sud',driver:'Julien',vehicle:'MASTER 01',departure:'05:45',published:true,pharmacies:['PH-001458','PH-001459','PH-001460']},
+{id:'T02',name:'Tournée 02 — Hauts-de-Seine',driver:'Nicolas',vehicle:'MASTER 02',departure:'06:00',published:true,pharmacies:['PH-001462','PH-001463']}
+];
+let state=JSON.parse(localStorage.getItem('lsn-v3')||'null') || {
+ routes:defaultRoutes, selectedRoute:null, load:{}, delivered:{},
+ bins:{available:Array.from({length:20},(_,i)=>'BAC-'+String(i+1).padStart(6,'0')),
+ client:{'PH-001458':['BAC-OLD-001','BAC-OLD-002','BAC-OLD-003','BAC-OLD-004','BAC-OLD-005']}}
+};
+let currentLoadPharmacy=null,currentDeliveryPharmacy=null,cameraTarget=null,stream=null,scanTimer=null;
+function save(){localStorage.setItem('lsn-v3',JSON.stringify(state))}
+function n(id){return document.getElementById(id)}
+function notice(id,msg,type='info'){n(id).innerHTML='<div class="notice '+type+'">'+msg+'</div>'}
+function go(id){document.querySelectorAll('.step').forEach(x=>x.classList.remove('active'));n(id).classList.add('active');document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.go===id));render()}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.go));
+
+function routeObj(){return state.routes.find(r=>r.id===state.selectedRoute)}
+function ph(id){return catalog.find(p=>p.id===id)}
+function selectRoute(id){state.selectedRoute=id;save();go('load')}
+function renderDriverRoutes(){
+ const rs=state.routes.filter(r=>r.published);
+ n('driverRoutes').innerHTML=rs.length?rs.map(r=>`<div class="card"><div class="row"><div><strong>${r.name}</strong><div class="meta">${r.driver} · ${r.vehicle} · ${r.departure}</div></div><span class="status ok">${r.pharmacies.length} pharmacies</span></div><button class="btn dark" onclick="selectRoute('${r.id}')">SÉLECTIONNER</button></div>`).join(''):'<div class="notice warn">Aucune tournée publiée.</div>';
+}
+function renderLoad(){
+ const r=routeObj(); n('loadTitle').textContent=r?'Chargement · '+r.name:'Chargement';
+ n('selectedRouteSummary').innerHTML=r?`<div class="row"><strong>${r.pharmacies.length} pharmacies</strong><span class="status ok">${r.id}</span></div><div class="meta">${r.pharmacies.map((id,i)=>(i+1)+'. '+ph(id).name).join('<br>')}</div>`:'Sélectionne d’abord une tournée.';
+}
+function handlePharmacyLoad(){
+ const code=n('pharmacyLoad').value.trim().toUpperCase(),r=routeObj();
+ if(!r){notice('loadNotice','Sélectionne une tournée.','warn');return}
+ if(!r.pharmacies.includes(code)){notice('loadNotice','❌ PHARMACIE HORS TOURNÉE — '+code,'err');return}
+ currentLoadPharmacy=code;
+ state.load[code]=state.load[code]||{bins:[],parcels:0,done:false};
+ renderActiveLoad(); notice('loadNotice','✅ '+ph(code).name+' reconnue.','ok')
+}
+function renderActiveLoad(){
+ const wrap=n('activeLoadPharmacy'); if(!currentLoadPharmacy){wrap.innerHTML='';return}
+ const p=ph(currentLoadPharmacy),d=state.load[currentLoadPharmacy];
+ wrap.innerHTML=`<div class="card"><h3>${p.name}</h3><div class="meta">${p.address}</div>
+ <div class="label">Scanner les bacs</div>
+ <div class="scangrid"><button class="btn primary" onclick="smartScan('binLoad')">📷 Caméra</button><button class="btn secondary" onclick="focusZebra('binLoad')">🔫 Scan Zebra</button></div>
+ <input id="binLoad" class="input" placeholder="BAC-000001" autocomplete="off"><button class="btn secondary" onclick="handleBinLoad()">AJOUTER LE BAC</button>
+ <ul class="list">${d.bins.map(x=>'<li>✅ '+x+'</li>').join('')}</ul>
+ <div class="label">Colis hors bac</div><div class="counter"><button onclick="parcel(-1)">−</button><span>${d.parcels}</span><button onclick="parcel(1)">+</button></div>
+ <button class="btn green" onclick="finishLoadPharmacy()">✓ TERMINER CETTE PHARMACIE</button></div>`;
+ bindEnter('binLoad',handleBinLoad);
+}
+function handleBinLoad(){
+ const input=n('binLoad'),code=input.value.trim().toUpperCase(),d=state.load[currentLoadPharmacy]; if(!code)return;
+ let owner=null; Object.entries(state.load).forEach(([pid,v])=>{if(v.bins.includes(code)&&pid!==currentLoadPharmacy)owner=pid});
+ if(owner){notice('loadNotice','❌ '+code+' est déjà affecté à '+ph(owner).name+'.','err');return}
+ if(d.bins.includes(code)){notice('loadNotice','⚠️ Bac déjà scanné.','warn');return}
+ d.bins.push(code); state.bins.available=state.bins.available.filter(x=>x!==code); save();input.value='';render();notice('loadNotice','✅ '+code+' chargé pour '+ph(currentLoadPharmacy).name+'.','ok')
+}
+function parcel(delta){let d=state.load[currentLoadPharmacy];d.parcels=Math.max(0,d.parcels+delta);save();renderActiveLoad()}
+function finishLoadPharmacy(){state.load[currentLoadPharmacy].done=true;save();notice('loadNotice','✅ Chargement pharmacie terminé.','ok');render()}
+
+function renderDelivery(){
+ const r=routeObj(); if(!r){n('nextDelivery').innerHTML='<div class="notice warn">Sélectionne une tournée.</div>';return}
+ const next=r.pharmacies.find(pid=>state.load[pid]?.done && !state.delivered[pid]?.done);
+ if(!next){n('nextDelivery').innerHTML='<div class="notice info">Aucune livraison prête, ou tournée terminée.</div>';return}
+ currentDeliveryPharmacy=next; const p=ph(next),d=state.load[next];
+ n('nextDelivery').innerHTML=`<div class="card"><h3>${p.name}</h3><div class="meta">${p.address}</div><div class="kpis"><div class="kpi"><b>${d.bins.length}</b><span class="small">bacs</span></div><div class="kpi"><b>${d.parcels}</b><span class="small">colis</span></div><div class="kpi"><b>${(state.bins.client[next]||[]).length}</b><span class="small">bacs chez client</span></div></div>
+ <button class="btn primary" onclick="openMaps('${encodeURIComponent(p.address)}')">OUVRIR WAZE / GPS</button></div>
+ <div class="scanbox"><h3>Scanner le QR dans l’officine</h3><div class="scangrid"><button class="btn primary" onclick="smartScan('pharmacyDelivery')">📷 Caméra</button><button class="btn secondary" onclick="focusZebra('pharmacyDelivery')">🔫 Scan Zebra</button></div>
+ <input id="pharmacyDelivery" class="input" placeholder="${next}" autocomplete="off"><button class="btn secondary" onclick="confirmDeliveryPharmacy()">VALIDER</button></div>`;
+ bindEnter('pharmacyDelivery',confirmDeliveryPharmacy);
+}
+function openMaps(addr){location.href='https://www.waze.com/ul?q='+addr+'&navigate=yes'}
+function confirmDeliveryPharmacy(){
+ const code=n('pharmacyDelivery').value.trim().toUpperCase();
+ if(code!==currentDeliveryPharmacy){notice('deliveryNotice','❌ Mauvaise pharmacie. Livraison bloquée.','err');return}
+ state.delivered[code]=state.delivered[code]||{bins:[],parcels:0,returns:[],done:false}; save(); renderDeliveryScan(); notice('deliveryNotice','✅ Destination confirmée.','ok')
+}
+function renderDeliveryScan(){
+ const p=ph(currentDeliveryPharmacy),load=state.load[currentDeliveryPharmacy],d=state.delivered[currentDeliveryPharmacy],held=state.bins.client[currentDeliveryPharmacy]||[];
+ n('nextDelivery').innerHTML+=`<div class="card"><h3>Livrer ${p.name}</h3>
+ <div class="label">Bacs livrés</div><div class="scangrid"><button class="btn primary" onclick="smartScan('binDelivery')">📷 Caméra</button><button class="btn secondary" onclick="focusZebra('binDelivery')">🔫 Scan Zebra</button></div>
+ <input id="binDelivery" class="input" placeholder="BAC-000001" autocomplete="off"><button class="btn secondary" onclick="handleBinDelivery()">LIVRER LE BAC</button>
+ <ul class="list">${d.bins.map(x=>'<li>✅ '+x+'</li>').join('')}</ul>
+ <div class="label">Colis livrés</div><div class="counter"><button onclick="delParcel(-1)">−</button><span>${d.parcels}</span><button onclick="delParcel(1)">+</button></div>
+ <hr style="border:0;border-top:1px solid #eee;margin:14px 0">
+ <h3>Bacs à récupérer (${held.length})</h3><div class="small">${held.join(', ')||'Aucun bac enregistré chez le client'}</div>
+ <div class="scangrid"><button class="btn primary" onclick="smartScan('binReturn')">📷 Caméra</button><button class="btn secondary" onclick="focusZebra('binReturn')">🔫 Scan Zebra</button></div>
+ <input id="binReturn" class="input" placeholder="BAC-OLD-001" autocomplete="off"><button class="btn secondary" onclick="handleReturn()">BAC RESTITUÉ</button>
+ <ul class="list">${d.returns.map(x=>'<li>↩ '+x+'</li>').join('')}</ul>
+ <button class="btn green" onclick="finishDelivery()">✓ VALIDER LA LIVRAISON</button></div>`;
+ bindEnter('binDelivery',handleBinDelivery);bindEnter('binReturn',handleReturn);
+}
+function handleBinDelivery(){let d=state.delivered[currentDeliveryPharmacy],load=state.load[currentDeliveryPharmacy],code=n('binDelivery').value.trim().toUpperCase();if(!code)return;if(!load.bins.includes(code)){notice('deliveryNotice','❌ '+code+' n’appartient pas à cette pharmacie.','err');return}if(!d.bins.includes(code))d.bins.push(code);n('binDelivery').value='';save();render();renderDeliveryScan()}
+function delParcel(delta){let d=state.delivered[currentDeliveryPharmacy];d.parcels=Math.max(0,d.parcels+delta);save();render();renderDeliveryScan()}
+function handleReturn(){let d=state.delivered[currentDeliveryPharmacy],code=n('binReturn').value.trim().toUpperCase();if(!code)return;if(!d.returns.includes(code))d.returns.push(code);n('binReturn').value='';save();render();renderDeliveryScan()}
+function finishDelivery(){
+ const pid=currentDeliveryPharmacy,load=state.load[pid],d=state.delivered[pid],held=state.bins.client[pid]||[];
+ const wrongReturns=d.returns.filter(x=>!held.includes(x));
+ const validReturns=d.returns.filter(x=>held.includes(x));
+ state.bins.client[pid]=held.filter(x=>!validReturns.includes(x)).concat(d.bins);
+ state.bins.available=[...new Set(state.bins.available.concat(validReturns))];
+ d.done=true;save();
+ let diffs=[];if(d.bins.length!==load.bins.length)diffs.push(`${d.bins.length}/${load.bins.length} bacs livrés`);if(d.parcels!==load.parcels)diffs.push(`${d.parcels}/${load.parcels} colis livrés`);let remain=held.length-validReturns.length;if(remain>0)diffs.push(`${remain} ancien(s) bac(s) restent chez le client`);if(wrongReturns.length)diffs.push(`bac(s) récupéré(s) non rattaché(s): ${wrongReturns.join(', ')}`);
+ notice('deliveryNotice',diffs.length?'⚠️ Livraison enregistrée avec écarts : '+diffs.join(' · '):'✅ Livraison conforme et enregistrée.',diffs.length?'warn':'ok');render()
+}
+
+function createRoute(){let id='T'+String(Math.max(0,...state.routes.map(r=>parseInt(r.id.slice(1))||0))+1).padStart(2,'0');state.routes.push({id,name:n('routeName').value.trim(),driver:n('routeDriver').value.trim(),vehicle:n('routeVehicle').value.trim(),departure:n('routeDeparture').value.trim(),published:false,pharmacies:[]});state.selectedRoute=id;save();render()}
+function addPh(pid,rid){let r=state.routes.find(x=>x.id===rid);if(r&&!r.pharmacies.includes(pid))r.pharmacies.push(pid);save();render()}
+function removePh(pid,rid){let r=state.routes.find(x=>x.id===rid);r.pharmacies=r.pharmacies.filter(x=>x!==pid);save();render()}
+function movePh(pid,rid,delta){let r=state.routes.find(x=>x.id===rid),i=r.pharmacies.indexOf(pid),j=i+delta;if(j>=0&&j<r.pharmacies.length)[r.pharmacies[i],r.pharmacies[j]]=[r.pharmacies[j],r.pharmacies[i]];save();render()}
+function publish(rid){let r=state.routes.find(x=>x.id===rid);r.published=true;save();render();alert(r.name+' est maintenant disponible côté livreur.')}
+function unpublish(rid){let r=state.routes.find(x=>x.id===rid);r.published=false;save();render()}
+function renderAdmin(){
+ n('adminRoutes').innerHTML=state.routes.map(r=>`<div class="admin-route ${state.selectedRoute===r.id?'selected':''}"><div class="row"><div onclick="state.selectedRoute='${r.id}';save();render()" style="cursor:pointer"><strong>${r.name}</strong><div class="meta">${r.driver} · ${r.vehicle} · ${r.departure}</div></div><span class="status ${r.published?'ok':'warn'}">${r.published?'Publiée':'Brouillon'}</span></div>
+ <div>${r.pharmacies.map((pid,i)=>`<div class="ph"><div class="row"><span><b>${i+1}. ${ph(pid).name}</b><br><span class="small">${ph(pid).address}</span></span><span><button class="mini" onclick="movePh('${pid}','${r.id}',-1)">↑</button> <button class="mini" onclick="movePh('${pid}','${r.id}',1)">↓</button> <button class="mini" onclick="removePh('${pid}','${r.id}')">×</button></span></div></div>`).join('')||'<div class="small">Aucune pharmacie.</div>'}
+ <button class="btn ${r.published?'secondary':'green'}" onclick="${r.published?`unpublish('${r.id}')`:`publish('${r.id}')`}">${r.published?'RETIRER DU LIVREUR':'PUBLIER AU LIVREUR'}</button></div>`).join('');
+ const target=state.routes.find(r=>r.id===state.selectedRoute)||state.routes[state.routes.length-1];
+ n('pharmacyPool').innerHTML=target?catalog.map(p=>`<div class="ph"><div class="row"><span><b>${p.name}</b><br><span class="small">${p.id}</span></span><button class="mini add" onclick="addPh('${p.id}','${target.id}')">+ ${target.id}</button></div></div>`).join(''):'Crée une tournée.';
+}
+function renderPark(){
+ let loaded=Object.values(state.load).reduce((a,d)=>a+d.bins.length,0)-Object.values(state.delivered).reduce((a,d)=>a+d.bins.length,0);
+ let client=Object.values(state.bins.client).reduce((a,x)=>a+x.length,0);
+ n('availableCount').textContent=state.bins.available.length;n('loadedCount').textContent=Math.max(0,loaded);n('clientCount').textContent=client;
+ n('parkDetails').innerHTML=Object.entries(state.bins.client).map(([pid,b])=>`<div class="card"><strong>${ph(pid)?.name||pid}</strong><div class="meta">${b.length} bac(s) : ${b.join(', ')||'aucun'}</div></div>`).join('');
+}
+function render(){renderDriverRoutes();renderLoad();renderDelivery();renderAdmin();renderPark();if(currentLoadPharmacy)renderActiveLoad()}
+function bindEnter(id,fn){setTimeout(()=>{let el=n(id);if(el)el.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();fn()}}},0)}
+function focusZebra(id){let el=n(id);if(el){el.focus();el.select();notice(id==='pharmacyLoad'?'loadNotice':'deliveryNotice','🔫 Champ prêt. Appuie sur la gâchette du Zebra : le scanner doit saisir le code puis envoyer Entrée.','info')}}
+let cameraLoop=false;
+
+
+async function smartScan(target){
+  cameraTarget=target;
+  if(!window.isSecureContext){
+    alert("Le scan live nécessite une URL HTTPS. Cette V4 doit être ouverte depuis le site hébergé, pas depuis un fichier téléchargé.");
+    return;
+  }
+  if(typeof ZXing === 'undefined'){
+    alert("Le moteur de scan ZXing n'a pas été chargé. Vérifie la connexion Internet puis recharge la page.");
+    return;
+  }
+  n('camera').classList.add('open');
+  n('camTitle').textContent='Scanner '+(target.startsWith('pharmacy')?'QR pharmacie':'QR / code-barres bac');
+  n('camStatus').textContent='Présente le code devant la caméra…';
+
+  try{
+    const codeReader = new ZXing.BrowserMultiFormatReader();
+    const devices = await codeReader.listVideoInputDevices();
+    let selected = null;
+    if(devices.length){
+      selected = devices.find(d => /back|rear|environment|arrière/i.test(d.label)) || devices[devices.length-1];
+    }
+    window._lsnCodeReader = codeReader;
+    await codeReader.decodeFromVideoDevice(selected ? selected.deviceId : undefined, 'video', (result, err) => {
+      if(result){
+        acceptScan(result.getText());
+      }
+    });
+  }catch(e){
+    closeCamera();
+    alert("Impossible d'ouvrir le scanner : "+e.message);
+  }
+}
+
+function openNativeCapture(target){
+  alert("Cette V4 utilise uniquement le scan live HTTPS.");
+}
+
+async function openCamera(target){
+  return smartScan(target);
+}
+
+function acceptScan(value){
+  const target=cameraTarget;
+  closeCamera();
+  setTimeout(()=>{
+    const el=n(target);
+    if(!el)return;
+    el.value=(value||'').trim();
+    if(target==='pharmacyLoad')handlePharmacyLoad();
+    else if(target==='binLoad')handleBinLoad();
+    else if(target==='pharmacyDelivery')confirmDeliveryPharmacy();
+    else if(target==='binDelivery')handleBinDelivery();
+    else if(target==='binReturn')handleReturn();
+  },100);
+}
+
+function closeCamera(){
+  n('camera').classList.remove('open');
+  try{
+    if(window._lsnCodeReader){
+      window._lsnCodeReader.reset();
+      window._lsnCodeReader=null;
+    }
+  }catch(e){}
+  if(stream){try{stream.getTracks().forEach(t=>t.stop())}catch(e){} stream=null}
+}
+}
+if('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+render();
+</script>
+
+
+
+</body></html>
