@@ -1,4 +1,4 @@
-LSN PHARMA — Livraison V4.4
+LSN PHARMA — Livraison V4.5
 
 Modifications :
 - écran Tournées : nom de la tournée sur une ligne et nombre de pharmacies affectées sur une deuxième ligne ;
@@ -10,3 +10,6 @@ Modifications :
 - traçabilité conservée du recours à la validation manuelle d’un bac.
 
 Pour GitHub Pages : remplacer index.html, sw.js, manifest.webmanifest et README.txt à la racine du dépôt.
+
+
+V4.5 : états de chargement/livraison isolés par tournée, onglets À charger / Prêtes pour livraison, sélection back-office indépendante, écran courant conservé après actualisation.
