@@ -1,4 +1,12 @@
-LSN PHARMA — Livraison V5.2
+LSN PHARMA — Livraison V5.3
+
+Correctifs V5.3 :
+- quitter une tournée sans aucun bac ni colis chargé la désélectionne complètement ;
+- l'onglet Chargement redevient vide tant qu'aucune nouvelle tournée n'est sélectionnée ;
+- suppression des messages de livraison résiduels provenant d'une tournée précédente ;
+- l'onglet Livraison affiche « Aucune tournée en cours » lorsqu'aucune tournée n'est active ;
+- les écarts de livraison restent affichés uniquement au moment où ils viennent réellement d'être confirmés.
+
 
 Évolutions principales :
 - Historique Pharmacien enrichi avec heure de départ, heure de fin et durée réelle de chaque tournée ;
