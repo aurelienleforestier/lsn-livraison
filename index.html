@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
 <link rel="manifest" href="manifest.webmanifest">
-<title>LSN PHARMA Livraison V4.9</title>
+<title>LSN PHARMA Livraison V5.0</title>
 <style>
 :root{--bg:#f5f7f8;--card:#fff;--text:#111827;--muted:#667085;--blue:#2563eb;--green:#16a34a;--orange:#f59e0b;--red:#dc2626;--line:#e5e7eb}
 *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
@@ -45,7 +45,7 @@ h1{font-size:25px;margin:0 0 5px}h2{font-size:21px;margin:0 0 8px}h3{font-size:1
 </head>
 <body>
 <div class="app">
-<header><div class="logo">LSN <span>PHARMA</span></div><div style="display:flex;gap:6px;align-items:center"><div class="badge" id="userRoleBadge">Profil</div><div class="badge">V4.9 · Historique & traçabilité</div></div></header>
+<header><div class="logo">LSN <span>PHARMA</span></div><div style="display:flex;gap:6px;align-items:center"><div class="badge" id="userRoleBadge">Profil</div><div class="badge">V5.0 · Parc & historique</div></div></header>
 <nav>
 <button data-go="home" class="active" onclick="go('home')">Tournées</button>
 <button data-go="load" onclick="go('load')">Chargement</button>
@@ -95,6 +95,13 @@ h1{font-size:25px;margin:0 0 5px}h2{font-size:21px;margin:0 0 8px}h3{font-size:1
 <div class="kpi"><b id="clientCount">5</b><span class="small">chez clients</span></div>
 </div>
 <div id="parkDetails"></div>
+<div class="card">
+<h3>Régulariser un bac revenu à l’entrepôt</h3>
+<div class="small">À utiliser uniquement si le bac est physiquement revenu à LSN PHARMA mais que sa restitution n’a pas été scannée.</div>
+<input id="releaseBinCode" class="input" placeholder="Ex. BAC-000007" autocomplete="off">
+<button class="btn secondary" onclick="releaseBinToWarehouse()">RESTITUÉ À L’ENTREPÔT</button>
+<div id="releaseBinNotice"></div>
+</div>
 </section>
 
 <section id="history" class="step">
@@ -114,7 +121,6 @@ h1{font-size:25px;margin:0 0 5px}h2{font-size:21px;margin:0 0 8px}h3{font-size:1
 <div class="kpis" id="kpiCards"></div>
 <div class="card"><h3>Performance par tournée</h3><div id="kpiRouteTable"></div></div>
 <div class="card"><h3>Performance par opérateur</h3><div id="kpiOperatorTable"></div></div>
-<div class="card"><h3>Temps réel vs référence Waze</h3><div id="kpiWaze"></div></div>
 </div>
 </section>
 
@@ -162,7 +168,7 @@ const defaultRoutes=[
 function n(id){return document.getElementById(id)}
 function notice(id,msg,type='info'){const el=n(id);if(el)el.innerHTML='<div class="notice '+type+'">'+msg+'</div>'}
 function freshState(){return {
- appVersion:49,
+ appVersion:50,
  currentUser:{id:'PHARMA-DEMO',name:'Pharmacien démo',role:'pharmacist'},
  routes:defaultRoutes.map(r=>({...r,pharmacies:[...r.pharmacies]})),
  selectedRoute:null,
@@ -175,6 +181,7 @@ function freshState(){return {
  deliveryCursorByRoute:{},
  tourRunMeta:{},
  tourHistory:[],
+ binAdjustments:[],
  bins:{available:Array.from({length:20},(_,i)=>'BAC-'+String(i+1).padStart(6,'0')),
  client:{'PH-001458':['BAC-OLD-001','BAC-OLD-002','BAC-OLD-003','BAC-OLD-004','BAC-OLD-005']}}
 }}
@@ -184,16 +191,18 @@ function normalizeDelivered(d){d=d&&typeof d==='object'?d:{};return {bins:Array.
 function loadState(){
  let saved=null;
  try{
+   const raw50=localStorage.getItem('lsn-v50');
    const raw49=localStorage.getItem('lsn-v49');
    const raw48=localStorage.getItem('lsn-v48');
    const raw47=localStorage.getItem('lsn-v47');
-   if(raw49)saved=JSON.parse(raw49);
+   if(raw50)saved=JSON.parse(raw50);
+   else if(raw49)saved=JSON.parse(raw49);
    else if(raw48)saved=JSON.parse(raw48);
    else if(raw47)saved=JSON.parse(raw47);
    else {const raw46=localStorage.getItem('lsn-v46');if(raw46)saved=JSON.parse(raw46);else {const raw45=localStorage.getItem('lsn-v45');if(raw45)saved=JSON.parse(raw45)}}
  }catch(e){saved=null}
  if(saved&&Array.isArray(saved.routes)){
-   saved.appVersion=49;
+   saved.appVersion=50;
    saved.routes=saved.routes.filter(r=>r&&typeof r.id==='string').map(normalizeRoute);
    saved.selectedRoute=typeof saved.selectedRoute==='string'&&saved.routes.some(r=>r.id===saved.selectedRoute)?saved.selectedRoute:null;
    saved.adminSelectedRoute=typeof saved.adminSelectedRoute==='string'&&saved.routes.some(r=>r.id===saved.adminSelectedRoute)?saved.adminSelectedRoute:null;
@@ -209,6 +218,7 @@ function loadState(){
    saved.deliveryCursorByRoute=saved.deliveryCursorByRoute&&typeof saved.deliveryCursorByRoute==='object'?saved.deliveryCursorByRoute:{};
    saved.tourRunMeta=saved.tourRunMeta&&typeof saved.tourRunMeta==='object'?saved.tourRunMeta:{};
    saved.tourHistory=Array.isArray(saved.tourHistory)?saved.tourHistory:[];
+   saved.binAdjustments=Array.isArray(saved.binAdjustments)?saved.binAdjustments:[];
    saved.bins=saved.bins&&typeof saved.bins==='object'?saved.bins:freshState().bins;
    saved.bins.available=Array.isArray(saved.bins.available)?saved.bins.available:freshState().bins.available;
    saved.bins.client=saved.bins.client&&typeof saved.bins.client==='object'?saved.bins.client:{};
@@ -228,13 +238,22 @@ function loadState(){
 }
 let state=loadState();
 let currentLoadPharmacy=null,currentDeliveryPharmacy=null,cameraTarget=null,stream=null,scanTimer=null,loadSubView='pending';
-function save(){try{localStorage.setItem('lsn-v49',JSON.stringify(state))}catch(e){}}
+function save(){try{localStorage.setItem('lsn-v50',JSON.stringify(state))}catch(e){}}
 function isPharmacist(){return state.currentUser?.role==='pharmacist'}
 function operatorName(){return state.currentUser?.name||state.currentUser?.id||'Utilisateur'}
+function activeDeliveryRouteId(){return Object.keys(state.deliveryStarted||{}).find(rid=>state.deliveryStarted[rid]===true)||null}
+function operatorDeliveryLockRouteId(){return isPharmacist()?null:activeDeliveryRouteId()}
 function applyRoleFromUrl(){try{const role=new URLSearchParams(location.search).get('role');if(role==='operator'||role==='pharmacist')state.currentUser={...(state.currentUser||{}),role,name:role==='pharmacist'?'Pharmacien démo':'Opérateur démo'};}catch(e){}}
 function renderAccess(){const k=n('kpiNav'),h=n('historyNav');if(k)k.style.display=isPharmacist()?'':'none';if(h)h.style.display=isPharmacist()?'':'none';const b=n('userRoleBadge');if(b)b.textContent=isPharmacist()?'Pharmacien':'Opérateur';if(!isPharmacist()&&['kpi','history'].includes(state.currentScreen))state.currentScreen='home'}
 function go(id){
  if(['kpi','history'].includes(id)&&!isPharmacist()){alert('Accès réservé au profil Pharmacien.');id='home'}
+ const lockedRid=operatorDeliveryLockRouteId();
+ if(lockedRid&&id==='delivery')state.selectedRoute=lockedRid;
+ if(lockedRid&&id==='load'){
+   state.selectedRoute=lockedRid;
+   alert('Une tournée est en cours de livraison. Termine-la avant de revenir au chargement.');
+   id='delivery';
+ }
  const target=n(id);if(!target)return;
  state.currentScreen=id;
  document.querySelectorAll('.step').forEach(x=>x.classList.remove('active'));
@@ -253,10 +272,23 @@ function escAttr(v){return String(v??'').replace(/&/g,'&amp;').replace(/"/g,'&qu
 function setPharmacyAccess(pid,field,value){if(!state.pharmacyMeta||typeof state.pharmacyMeta!=='object')state.pharmacyMeta={};if(!state.pharmacyMeta[pid])state.pharmacyMeta[pid]={};state.pharmacyMeta[pid][field]=String(value||'').trim();save()}
 function routeLoad(rid=state.selectedRoute){if(!rid)return {};if(!state.loadByRoute[rid]||typeof state.loadByRoute[rid]!=='object')state.loadByRoute[rid]={};return state.loadByRoute[rid]}
 function routeDelivered(rid=state.selectedRoute){if(!rid)return {};if(!state.deliveredByRoute[rid]||typeof state.deliveredByRoute[rid]!=='object')state.deliveredByRoute[rid]={};return state.deliveredByRoute[rid]}
-function selectRoute(id){state.selectedRoute=id;currentLoadPharmacy=null;currentDeliveryPharmacy=null;loadSubView='pending';save();go('load')}
+function selectRoute(id){
+ const lockedRid=operatorDeliveryLockRouteId();
+ if(lockedRid){
+   state.selectedRoute=lockedRid;save();
+   if(id!==lockedRid)alert('Impossible de sélectionner une autre tournée : une livraison est encore en cours.');
+   go('delivery');return;
+ }
+ state.selectedRoute=id;currentLoadPharmacy=null;currentDeliveryPharmacy=null;loadSubView='pending';save();go('load')
+}
 function renderDriverRoutes(){
- const rs=state.routes.filter(r=>r.published);
- n('driverRoutes').innerHTML=rs.length?rs.map(r=>`<div class="card"><strong style="display:block;font-size:17px">${r.name}</strong><div class="meta" style="margin-top:6px">${r.pharmacies.length} pharmacie(s) affectée(s) à la tournée</div><button class="btn dark" onclick="selectRoute('${r.id}')">SÉLECTIONNER</button></div>`).join(''):'<div class="notice warn">Aucune tournée publiée.</div>';
+ const rs=state.routes.filter(r=>r.published),lockedRid=operatorDeliveryLockRouteId();
+ const lockNotice=lockedRid?`<div class="notice warn">Une tournée est en cours de livraison. Termine-la avant de sélectionner ou charger une autre tournée.</div>`:'';
+ n('driverRoutes').innerHTML=lockNotice+(rs.length?rs.map(r=>{
+   const locked=!!lockedRid,active=lockedRid===r.id;
+   const action=active?`<button class="btn dark" onclick="selectRoute('${r.id}')">REPRENDRE LA LIVRAISON</button>`:locked?`<button class="btn secondary" disabled>INDISPONIBLE PENDANT LA LIVRAISON</button>`:`<button class="btn dark" onclick="selectRoute('${r.id}')">SÉLECTIONNER</button>`;
+   return `<div class="card"><strong style="display:block;font-size:17px">${r.name}</strong><div class="meta" style="margin-top:6px">${r.pharmacies.length} pharmacie(s) affectée(s) à la tournée</div>${action}</div>`
+ }).join(''):'<div class="notice warn">Aucune tournée publiée.</div>');
 }
 function setLoadView(view){loadSubView=view==='ready'?'ready':'pending';currentLoadPharmacy=null;renderLoad()}
 function renderLoad(){
@@ -308,13 +340,20 @@ function renderActiveLoad(){
  <button class="btn green" onclick="finishLoadPharmacy()">✓ CHARGEMENT TERMINÉ</button><button class="btn secondary" onclick="markNoOrder()">AUCUNE COMMANDE</button></div>`;
  bindEnter('binLoad',handleBinLoad);
 }
+function findBinAtClient(code){
+ for(const [pid,bins] of Object.entries(state.bins?.client||{}))if(Array.isArray(bins)&&bins.includes(code))return {pid};
+ return null;
+}
 function findBinOwnerAcrossRoutes(code,currentRid,currentPid){
  for(const [rid,loads] of Object.entries(state.loadByRoute||{}))for(const [pid,d] of Object.entries(loads||{})){if(rid===currentRid&&pid===currentPid)continue;if(Array.isArray(d?.bins)&&d.bins.includes(code)&&!state.deliveredByRoute?.[rid]?.[pid]?.done)return {rid,pid}}
  return null;
 }
 function handleBinLoad(){
  const r=routeObj();if(!r||!currentLoadPharmacy)return;const input=n('binLoad'),code=input.value.trim().toUpperCase(),loads=routeLoad(r.id),d=loads[currentLoadPharmacy];if(!code)return;
- d.noOrder=false;d.done=false;const owner=findBinOwnerAcrossRoutes(code,r.id,currentLoadPharmacy);
+ d.noOrder=false;d.done=false;
+ const clientHolder=findBinAtClient(code);
+ if(clientHolder){notice('loadNotice','❌ '+code+' est actuellement enregistré chez '+(ph(clientHolder.pid)?.name||clientHolder.pid)+'. Il doit être restitué à LSN PHARMA avant de pouvoir être rechargé.','err');return}
+ const owner=findBinOwnerAcrossRoutes(code,r.id,currentLoadPharmacy);
  if(owner){const or=state.routes.find(x=>x.id===owner.rid);notice('loadNotice','❌ '+code+' est déjà affecté à '+(ph(owner.pid)?.name||owner.pid)+' dans '+(or?.name||owner.rid)+'.','err');return}
  if(d.bins.includes(code)){notice('loadNotice','⚠️ Bac déjà scanné.','warn');return}
  d.bins.push(code);state.bins.available=state.bins.available.filter(x=>x!==code);state.deliveryStarted[r.id]=false;save();input.value='';render();renderActiveLoad();notice('loadNotice','✅ '+code+' chargé pour '+(ph(currentLoadPharmacy)?.name||currentLoadPharmacy)+'.','ok');
@@ -397,7 +436,7 @@ function minutesBetween(a,b){return a&&b?Math.max(0,(b-a)/60000):null}
 function countDeliveryAnomalies(load,d){let n=0;if((d?.bins?.length||0)!==(load?.bins?.length||0))n++;if((d?.parcels||0)!==(load?.parcels||0))n++;n+=(d?.wrongReturns?.length||0);return n}
 function closeAndResetTour(){
  const r=routeObj();if(!r)return;const targets=deliveryTargets(r),loads=routeLoad(r.id),delivered=routeDelivered(r.id);if(targets.some(pid=>!delivered[pid]?.done)){alert('Toutes les pharmacies à livrer ne sont pas terminées.');return}
- const meta=state.tourRunMeta[r.id]||{};const endedAt=Date.now();const records=targets.map(pid=>{const d=normalizeDelivered(delivered[pid]),l=normalizeLoad(loads[pid]);const anomalies=countDeliveryAnomalies(l,d);return {pharmacyId:pid,pharmacyName:ph(pid)?.name||pid,loadedBins:l.bins.length,loadedBinIds:[...l.bins],deliveredBins:d.bins.length,deliveredBinIds:[...d.bins],loadedParcels:l.parcels,deliveredParcels:d.parcels,manualBins:d.manualBins.length,manualBinIds:[...d.manualBins],returns:d.returns.length,returnedBinIds:[...d.returns],heldBefore:d.heldBeforeCount??0,heldBeforeBinIds:[...(d.heldBeforeBins||[])],wrongReturns:d.wrongReturns.length,wrongReturnIds:[...d.wrongReturns],skips:d.skips||0,navigationOpenedAt:d.navigationOpenedAt||null,firstActionAt:d.firstActionAt||null,completedAt:d.completedAt||null,travelActualMinutes:minutesBetween(d.navigationOpenedAt,d.firstActionAt),stopMinutes:minutesBetween(d.firstActionAt,d.completedAt),wazeReferenceMinutes:null,anomalies};});
+ const meta=state.tourRunMeta[r.id]||{};const endedAt=Date.now();const records=targets.map(pid=>{const d=normalizeDelivered(delivered[pid]),l=normalizeLoad(loads[pid]);const anomalies=countDeliveryAnomalies(l,d);return {pharmacyId:pid,pharmacyName:ph(pid)?.name||pid,loadedBins:l.bins.length,loadedBinIds:[...l.bins],deliveredBins:d.bins.length,deliveredBinIds:[...d.bins],loadedParcels:l.parcels,deliveredParcels:d.parcels,manualBins:d.manualBins.length,manualBinIds:[...d.manualBins],returns:d.returns.length,returnedBinIds:[...d.returns],heldBefore:d.heldBeforeCount??0,heldBeforeBinIds:[...(d.heldBeforeBins||[])],wrongReturns:d.wrongReturns.length,wrongReturnIds:[...d.wrongReturns],skips:d.skips||0,navigationOpenedAt:d.navigationOpenedAt||null,firstActionAt:d.firstActionAt||null,completedAt:d.completedAt||null,travelActualMinutes:minutesBetween(d.navigationOpenedAt,d.firstActionAt),stopMinutes:minutesBetween(d.firstActionAt,d.completedAt),anomalies};});
  state.tourHistory.push({id:meta.runId||('RUN-'+endedAt+'-'+r.id),routeId:r.id,routeName:r.name,operatorId:meta.operator?.id||state.currentUser?.id||'',operatorName:meta.operator?.name||operatorName(),startedAt:meta.startedAt||endedAt,endedAt,durationMinutes:minutesBetween(meta.startedAt||endedAt,endedAt)||0,pharmacies:records.length,anomalies:records.reduce((a,x)=>a+x.anomalies,0),manualBins:records.reduce((a,x)=>a+x.manualBins,0),skips:records.reduce((a,x)=>a+x.skips,0),records});
  delete state.loadByRoute[r.id];delete state.deliveredByRoute[r.id];delete state.tourRunMeta[r.id];state.deliveryStarted[r.id]=false;state.deliveryCursorByRoute[r.id]=0;currentLoadPharmacy=null;currentDeliveryPharmacy=null;loadSubView='pending';state.selectedRoute=null;state.currentScreen='home';save();go('home');
 }
@@ -424,30 +463,80 @@ function renderAdmin(){
 }
 function renderPark(){
  const activeLoaded=new Set();for(const [rid,loads] of Object.entries(state.loadByRoute||{})){const delivered=state.deliveredByRoute?.[rid]||{};Object.entries(loads||{}).forEach(([pid,d])=>{if(!d?.noOrder&&!delivered?.[pid]?.done)(d?.bins||[]).forEach(b=>activeLoaded.add(b))})}
- const client=Object.values(state.bins.client).reduce((a,x)=>a+(Array.isArray(x)?x.length:0),0);n('availableCount').textContent=state.bins.available.length;n('loadedCount').textContent=activeLoaded.size;n('clientCount').textContent=client;n('parkDetails').innerHTML=Object.entries(state.bins.client).map(([pid,b])=>`<div class="card"><strong>${ph(pid)?.name||pid}</strong><div class="meta">${b.length} bac(s) : ${b.join(', ')||'aucun'}</div></div>`).join('');
+ const client=Object.values(state.bins.client).reduce((a,x)=>a+(Array.isArray(x)?x.length:0),0);n('availableCount').textContent=state.bins.available.length;n('loadedCount').textContent=activeLoaded.size;n('clientCount').textContent=client;n('parkDetails').innerHTML=Object.entries(state.bins.client).filter(([,b])=>Array.isArray(b)&&b.length).map(([pid,b])=>`<div class="card"><strong>${ph(pid)?.name||pid}</strong><div class="meta">${b.length} bac(s) : ${b.join(', ')||'aucun'}</div></div>`).join('')||'<div class="small">Aucun bac actuellement enregistré chez un client.</div>';
+}
+function releaseBinToWarehouse(){
+ const input=n('releaseBinCode'),code=String(input?.value||'').trim().toUpperCase();if(!code)return;
+ const active=findBinOwnerAcrossRoutes(code,null,null);
+ if(active){const r=state.routes.find(x=>x.id===active.rid);notice('releaseBinNotice','❌ '+code+' est actuellement chargé dans '+(r?.name||active.rid)+' pour '+(ph(active.pid)?.name||active.pid)+'. Corrige d’abord le chargement concerné.','err');return}
+ const holder=findBinAtClient(code);
+ if(!holder){
+   if((state.bins.available||[]).includes(code))notice('releaseBinNotice','ℹ️ '+code+' est déjà disponible à l’entrepôt.','info');
+   else notice('releaseBinNotice','⚠️ '+code+' n’est pas actuellement enregistré chez une pharmacie.','warn');
+   return;
+ }
+ const pname=ph(holder.pid)?.name||holder.pid;
+ if(!confirm(code+' est enregistré chez '+pname+'. Confirmer qu’il est physiquement revenu à LSN PHARMA ?'))return;
+ state.bins.client[holder.pid]=(state.bins.client[holder.pid]||[]).filter(x=>x!==code);
+ if(!state.bins.available.includes(code))state.bins.available.push(code);
+ state.binAdjustments=Array.isArray(state.binAdjustments)?state.binAdjustments:[];
+ state.binAdjustments.push({bin:code,type:'warehouse_return_correction',fromPharmacy:holder.pid,at:Date.now(),operatorId:state.currentUser?.id||'',operatorName:operatorName()});
+ if(input)input.value='';save();renderPark();notice('releaseBinNotice','✅ '+code+' libéré : disponible à l’entrepôt.','ok');
 }
 function getHistoryRecords(){
  const out=[];
  (state.tourHistory||[]).forEach(run=>(run.records||[]).forEach(rec=>out.push({...rec,runId:run.id,routeId:run.routeId,routeName:run.routeName,operatorId:run.operatorId,operatorName:run.operatorName,routeStartedAt:run.startedAt,routeEndedAt:run.endedAt,archived:true})));
- for(const r of state.routes||[]){const loads=state.loadByRoute?.[r.id]||{},delivered=state.deliveredByRoute?.[r.id]||{},meta=state.tourRunMeta?.[r.id]||{};for(const pid of Object.keys(delivered)){const d=normalizeDelivered(delivered[pid]);if(!d.done)continue;const l=normalizeLoad(loads[pid]);out.push({runId:meta.runId||('ACTIVE-'+r.id),routeId:r.id,routeName:r.name,operatorId:meta.operator?.id||state.currentUser?.id||'',operatorName:meta.operator?.name||operatorName(),routeStartedAt:meta.startedAt||null,routeEndedAt:null,archived:false,pharmacyId:pid,pharmacyName:ph(pid)?.name||pid,loadedBins:l.bins.length,loadedBinIds:[...l.bins],deliveredBins:d.bins.length,deliveredBinIds:[...d.bins],loadedParcels:l.parcels,deliveredParcels:d.parcels,manualBins:d.manualBins.length,manualBinIds:[...d.manualBins],returns:d.returns.length,returnedBinIds:[...d.returns],heldBefore:d.heldBeforeCount??0,heldBeforeBinIds:[...(d.heldBeforeBins||[])],wrongReturns:d.wrongReturns.length,wrongReturnIds:[...d.wrongReturns],skips:d.skips||0,navigationOpenedAt:d.navigationOpenedAt||null,firstActionAt:d.firstActionAt||null,completedAt:d.completedAt||null,travelActualMinutes:minutesBetween(d.navigationOpenedAt,d.firstActionAt),stopMinutes:minutesBetween(d.firstActionAt,d.completedAt),wazeReferenceMinutes:null,anomalies:countDeliveryAnomalies(l,d)});}}
+ for(const r of state.routes||[]){const loads=state.loadByRoute?.[r.id]||{},delivered=state.deliveredByRoute?.[r.id]||{},meta=state.tourRunMeta?.[r.id]||{};for(const pid of Object.keys(delivered)){const d=normalizeDelivered(delivered[pid]);if(!d.done)continue;const l=normalizeLoad(loads[pid]);out.push({runId:meta.runId||('ACTIVE-'+r.id),routeId:r.id,routeName:r.name,operatorId:meta.operator?.id||state.currentUser?.id||'',operatorName:meta.operator?.name||operatorName(),routeStartedAt:meta.startedAt||null,routeEndedAt:null,archived:false,pharmacyId:pid,pharmacyName:ph(pid)?.name||pid,loadedBins:l.bins.length,loadedBinIds:[...l.bins],deliveredBins:d.bins.length,deliveredBinIds:[...d.bins],loadedParcels:l.parcels,deliveredParcels:d.parcels,manualBins:d.manualBins.length,manualBinIds:[...d.manualBins],returns:d.returns.length,returnedBinIds:[...d.returns],heldBefore:d.heldBeforeCount??0,heldBeforeBinIds:[...(d.heldBeforeBins||[])],wrongReturns:d.wrongReturns.length,wrongReturnIds:[...d.wrongReturns],skips:d.skips||0,navigationOpenedAt:d.navigationOpenedAt||null,firstActionAt:d.firstActionAt||null,completedAt:d.completedAt||null,travelActualMinutes:minutesBetween(d.navigationOpenedAt,d.firstActionAt),stopMinutes:minutesBetween(d.firstActionAt,d.completedAt),anomalies:countDeliveryAnomalies(l,d)});}}
  return out.sort((a,b)=>(b.completedAt||b.routeEndedAt||0)-(a.completedAt||a.routeEndedAt||0));
 }
+function historyDayKey(ts){
+ const d=new Date(ts||Date.now());return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function historyDayLabel(key){const [y,m,d]=key.split('-');return `${d}/${m}/${y}`}
 function renderHistory(){
- const denied=n('historyDenied'),content=n('historyContent'),results=n('historyResults');if(!denied||!content||!results)return;if(!isPharmacist()){denied.style.display='block';content.style.display='none';return}denied.style.display='none';content.style.display='block';
- const q=String(n('historySearch')?.value||'').trim().toLowerCase();let rows=getHistoryRecords();if(q)rows=rows.filter(x=>[x.pharmacyName,x.pharmacyId,x.routeName,x.operatorName,...(x.loadedBinIds||[]),...(x.deliveredBinIds||[]),...(x.returnedBinIds||[])].join(' ').toLowerCase().includes(q));
+ const denied=n('historyDenied'),content=n('historyContent'),results=n('historyResults');if(!denied||!content||!results)return;
+ if(!isPharmacist()){denied.style.display='block';content.style.display='none';return}
+ denied.style.display='none';content.style.display='block';
+ const q=String(n('historySearch')?.value||'').trim().toLowerCase();let rows=getHistoryRecords();
+ if(q)rows=rows.filter(x=>[x.pharmacyName,x.pharmacyId,x.routeName,x.operatorName,...(x.loadedBinIds||[]),...(x.deliveredBinIds||[]),...(x.returnedBinIds||[])].join(' ').toLowerCase().includes(q));
  if(!rows.length){results.innerHTML='<div class="notice info">Aucune livraison trouvée.</div>';return}
- results.innerHTML=rows.map(x=>{const at=x.completedAt||x.routeEndedAt,parcelDiff=(x.loadedParcels||0)!==(x.deliveredParcels||0),binDiff=(x.loadedBins||0)!==(x.deliveredBins||0),status=(parcelDiff||binDiff||x.wrongReturns)?'<span class="history-alert">⚠️ Écart</span>':'<span class="history-ok">✓ Sans écart quantitatif</span>';return `<div class="history-card"><div class="row"><div><strong>${x.pharmacyName}</strong><div class="small">${x.pharmacyId}</div></div>${status}</div><div class="history-line"><strong>${at?new Date(at).toLocaleString('fr-FR'):'Heure non disponible'}</strong></div><div class="history-line">Tournée : <strong>${x.routeName}</strong></div><div class="history-line">Opérateur : <strong>${x.operatorName||'—'}</strong></div><div class="chips"><span class="chip">Chargé : ${x.loadedBins||0} bac(s) + ${x.loadedParcels||0} colis</span><span class="chip">Livré : ${x.deliveredBins||0} bac(s) + ${x.deliveredParcels||0} colis</span><span class="chip">Retours : ${x.returns||0}</span></div><div class="history-line"><strong>Bacs chargés :</strong> <span class="mono">${(x.loadedBinIds||[]).join(', ')||'aucun'}</span></div><div class="history-line"><strong>Bacs livrés :</strong> <span class="mono">${(x.deliveredBinIds||[]).join(', ')||'aucun'}</span></div><div class="history-line"><strong>Bacs restitués :</strong> <span class="mono">${(x.returnedBinIds||[]).join(', ')||'aucun'}</span></div>${(x.manualBinIds||[]).length?`<div class="history-line"><strong>Validations manuelles :</strong> <span class="mono">${x.manualBinIds.join(', ')}</span></div>`:''}${x.skips?`<div class="history-line"><strong>Pharmacie sautée :</strong> ${x.skips} fois</div>`:''}</div>`}).join('');
+ const byDay={};
+ rows.forEach(x=>{
+   const ts=x.routeEndedAt||x.completedAt||x.routeStartedAt||Date.now(),day=historyDayKey(ts);
+   if(!byDay[day])byDay[day]={};
+   const runKey=x.runId||`${x.routeId}-${x.routeStartedAt||day}`;
+   if(!byDay[day][runKey])byDay[day][runKey]={routeName:x.routeName,operatorName:x.operatorName,startedAt:x.routeStartedAt,endedAt:x.routeEndedAt,archived:x.archived,rows:[]};
+   byDay[day][runKey].rows.push(x);
+ });
+ results.innerHTML=Object.keys(byDay).sort().reverse().map(day=>{
+   const runs=Object.values(byDay[day]);
+   const routesHtml=runs.map(run=>{
+     const routeWhen=run.endedAt?`Terminée à ${new Date(run.endedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`:'Tournée en cours';
+     const pharmacies=run.rows.map(x=>{
+       const parcelDiff=(x.loadedParcels||0)!==(x.deliveredParcels||0),binDiff=(x.loadedBins||0)!==(x.deliveredBins||0),hasDiff=parcelDiff||binDiff||(x.wrongReturns||0)>0;
+       return `<details class="ph"><summary><strong>${x.pharmacyName}</strong> <span class="small">· ${x.pharmacyId} · ${x.deliveredBins||0} bac(s) · ${x.deliveredParcels||0} colis ${hasDiff?'⚠️':''}</span></summary><div class="history-line">Livraison : <strong>${x.completedAt?new Date(x.completedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—'}</strong></div><div class="history-line">Chargé : <strong>${x.loadedBins||0} bac(s) + ${x.loadedParcels||0} colis</strong></div><div class="history-line">Livré : <strong>${x.deliveredBins||0} bac(s) + ${x.deliveredParcels||0} colis</strong></div><div class="history-line"><strong>Bacs chargés :</strong> <span class="mono">${(x.loadedBinIds||[]).join(', ')||'aucun'}</span></div><div class="history-line"><strong>Bacs livrés :</strong> <span class="mono">${(x.deliveredBinIds||[]).join(', ')||'aucun'}</span></div><div class="history-line"><strong>Bacs restitués :</strong> <span class="mono">${(x.returnedBinIds||[]).join(', ')||'aucun'}</span></div>${(x.manualBinIds||[]).length?`<div class="history-line"><strong>Validations manuelles :</strong> <span class="mono">${x.manualBinIds.join(', ')}</span></div>`:''}${x.skips?`<div class="history-line"><strong>Pharmacie sautée/reprise :</strong> ${x.skips} fois</div>`:''}</details>`
+     }).join('');
+     return `<details class="history-card" ${q?'open':''}><summary><strong>${run.routeName}</strong> <span class="small">· ${run.operatorName||'—'} · ${run.rows.length} pharmacie(s)</span></summary><div class="small" style="margin:8px 0">${routeWhen}</div>${pharmacies}</details>`
+   }).join('');
+   return `<details class="history-card" open><summary><strong>${historyDayLabel(day)}</strong> <span class="small">· ${runs.length} tournée(s)</span></summary>${routesHtml}</details>`
+ }).join('');
 }
 function fmtMin(v){if(v===null||v===undefined||!Number.isFinite(v))return '—';const m=Math.round(v);return m<60?m+' min':Math.floor(m/60)+' h '+String(m%60).padStart(2,'0')}
 function renderKpi(){
- const denied=n('kpiDenied'),content=n('kpiContent');if(!denied||!content)return;if(!isPharmacist()){denied.style.display='block';content.style.display='none';return}denied.style.display='none';content.style.display='block';
- const h=state.tourHistory||[],runs=h.length,totalAn=h.reduce((a,x)=>a+(x.anomalies||0),0),totalManual=h.reduce((a,x)=>a+(x.manualBins||0),0),totalDelivered=h.reduce((a,x)=>a+(x.records||[]).reduce((s,r)=>s+(r.deliveredBins||0),0),0),avgDur=runs?h.reduce((a,x)=>a+(x.durationMinutes||0),0)/runs:null;
+ const denied=n('kpiDenied'),content=n('kpiContent');if(!denied||!content)return;
+ if(!isPharmacist()){denied.style.display='block';content.style.display='none';return}
+ denied.style.display='none';content.style.display='block';
+ const h=state.tourHistory||[],runs=h.length,totalAn=h.reduce((a,x)=>a+(x.anomalies||0),0),totalManual=h.reduce((a,x)=>a+(x.manualBins||0),0),totalDelivered=h.reduce((a,x)=>a+(x.records||[]).reduce((sum,r)=>sum+(r.deliveredBins||0),0),0),avgDur=runs?h.reduce((a,x)=>a+(x.durationMinutes||0),0)/runs:null;
  const allRec=h.flatMap(x=>x.records||[]),expectedReturns=allRec.reduce((a,x)=>a+(x.heldBefore||0),0),actualReturns=allRec.reduce((a,x)=>a+(x.returns||0),0),returnRate=expectedReturns?Math.min(100,actualReturns/expectedReturns*100):null;
  n('kpiCards').innerHTML=`<div class="kpi"><b>${runs}</b><span class="small">tournées archivées</span></div><div class="kpi"><b>${fmtMin(avgDur)}</b><span class="small">durée moyenne</span></div><div class="kpi"><b>${totalAn}</b><span class="small">anomalies livraison</span></div><div class="kpi"><b>${totalDelivered?Math.round(totalManual/totalDelivered*100):0}%</b><span class="small">bacs saisis manuellement</span></div><div class="kpi"><b>${returnRate===null?'—':Math.round(returnRate)+'%'}</b><span class="small">récupération bacs</span></div>`;
- if(!h.length){n('kpiRouteTable').innerHTML='<div class="small">Aucune tournée archivée pour le moment.</div>';n('kpiOperatorTable').innerHTML='<div class="small">Les KPI opérateur apparaîtront après clôture d’une tournée.</div>';n('kpiWaze').innerHTML='<div class="notice info">Les temps réels seront enregistrés. La durée théorique Waze nécessite une connexion API dédiée ; elle n’est pas simulée dans ce prototype.</div>';return}
+ if(!h.length){
+   n('kpiRouteTable').innerHTML='<div class="small">Aucune tournée archivée pour le moment.</div>';
+   n('kpiOperatorTable').innerHTML='<div class="small">Les KPI opérateur apparaîtront après clôture d’une tournée.</div>';
+   return;
+ }
  n('kpiRouteTable').innerHTML='<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr><th style="text-align:left;padding:6px">Tournée</th><th>Opérateur</th><th>Durée</th><th>Anomalies</th><th>Manuels</th><th>Sauts</th></tr>'+h.slice().reverse().map(x=>`<tr><td style="padding:6px"><b>${x.routeName}</b><br><span class="small">${new Date(x.endedAt).toLocaleString('fr-FR')}</span></td><td style="text-align:center">${x.operatorName}</td><td style="text-align:center">${fmtMin(x.durationMinutes)}</td><td style="text-align:center">${x.anomalies||0}</td><td style="text-align:center">${x.manualBins||0}</td><td style="text-align:center">${x.skips||0}</td></tr>`).join('')+'</table></div>';
- const byOp={};h.forEach(x=>{const k=x.operatorName||'Inconnu';if(!byOp[k])byOp[k]={runs:0,dur:0,an:0,man:0};byOp[k].runs++;byOp[k].dur+=x.durationMinutes||0;byOp[k].an+=x.anomalies||0;byOp[k].man+=x.manualBins||0});n('kpiOperatorTable').innerHTML=Object.entries(byOp).map(([op,v])=>`<div class="ph"><div class="row"><strong>${op}</strong><span>${v.runs} tournée(s)</span></div><div class="small">Durée moyenne : ${fmtMin(v.dur/v.runs)} · Anomalies : ${v.an} · Bacs manuels : ${v.man}</div></div>`).join('');
- const travel=allRec.filter(x=>Number.isFinite(x.travelActualMinutes));n('kpiWaze').innerHTML=`<div class="small"><strong>Temps réels de trajet mesurés :</strong> ${travel.length?fmtMin(travel.reduce((a,x)=>a+x.travelActualMinutes,0)/travel.length):'—'}</div><div class="notice info">La comparaison automatique « réel vs Waze » sera disponible lorsque l’ETA théorique sera récupéré par une API de navigation. L’application n’invente pas cette valeur.</div>`;
+ const byOp={};h.forEach(x=>{const k=x.operatorName||'Inconnu';if(!byOp[k])byOp[k]={runs:0,dur:0,an:0,man:0};byOp[k].runs++;byOp[k].dur+=x.durationMinutes||0;byOp[k].an+=x.anomalies||0;byOp[k].man+=x.manualBins||0});
+ n('kpiOperatorTable').innerHTML=Object.entries(byOp).map(([op,v])=>`<div class="ph"><div class="row"><strong>${op}</strong><span>${v.runs} tournée(s)</span></div><div class="small">Durée moyenne : ${fmtMin(v.dur/v.runs)} · Anomalies : ${v.an} · Bacs manuels : ${v.man}</div></div>`).join('');
 }
 function render(){renderAccess();renderDriverRoutes();renderLoad();renderDelivery();renderAdmin();renderPark();renderHistory();renderKpi()}
 function bindEnter(id,fn){setTimeout(()=>{const el=n(id);if(el)el.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();fn()}}},0)}
