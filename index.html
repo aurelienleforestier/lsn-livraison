@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
 <link rel="manifest" href="manifest.webmanifest">
-<title>LSN PHARMA Livraison V4.7</title>
+<title>LSN PHARMA Livraison V4.9</title>
 <style>
 :root{--bg:#f5f7f8;--card:#fff;--text:#111827;--muted:#667085;--blue:#2563eb;--green:#16a34a;--orange:#f59e0b;--red:#dc2626;--line:#e5e7eb}
 *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
@@ -39,17 +39,19 @@ h1{font-size:25px;margin:0 0 5px}h2{font-size:21px;margin:0 0 8px}h3{font-size:1
 .loadtabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.loadtab{border:1px solid var(--line);background:#f8fafc;border-radius:12px;padding:11px 8px;font-weight:800}.loadtab.active{background:#111827;color:#fff;border-color:#111827}
 .phbutton{width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:12px;padding:12px;margin:7px 0}.phbutton strong{display:block}.phbutton .meta{margin-top:4px}.admin-select{margin-top:8px}
 .detail-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}.detail-head .mini{flex:0 0 auto}.delivery-nav{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.delivery-nav .btn{margin-top:0}.delivery-nav button:disabled{opacity:.4}.route-position{font-size:13px;font-weight:800;color:var(--muted);margin-bottom:8px}.expected-bin{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:800}.admin-detail-title{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.admin-main-actions{margin-top:8px}.ph-admin-meta{margin-top:6px;padding-top:8px;border-top:1px solid #f1f5f9}.ph-admin-meta .input{margin-top:5px}.delivery-ident{margin-top:9px;padding:9px 10px;background:#f8fafc;border-radius:10px;font-size:13px}.delivery-ident div+div{margin-top:3px}
+.history-search{margin:10px 0 14px}.history-card{border:1px solid var(--line);border-radius:14px;padding:12px;margin:10px 0}.history-card .chips{display:flex;flex-wrap:wrap;gap:6px;margin:7px 0}.chip{font-size:11px;background:#f3f4f6;border-radius:999px;padding:5px 8px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.history-line{font-size:13px;margin-top:5px}.history-alert{font-weight:800;color:#991b1b}.history-ok{font-weight:800;color:#166534}
 </style>
 <script defer src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
 </head>
 <body>
 <div class="app">
-<header><div class="logo">LSN <span>PHARMA</span></div><div style="display:flex;gap:6px;align-items:center"><div class="badge" id="userRoleBadge">Profil</div><div class="badge">V4.8 · Traçabilité & KPI</div></div></header>
+<header><div class="logo">LSN <span>PHARMA</span></div><div style="display:flex;gap:6px;align-items:center"><div class="badge" id="userRoleBadge">Profil</div><div class="badge">V4.9 · Historique & traçabilité</div></div></header>
 <nav>
 <button data-go="home" class="active" onclick="go('home')">Tournées</button>
 <button data-go="load" onclick="go('load')">Chargement</button>
 <button data-go="delivery" onclick="go('delivery')">Livraison</button>
 <button data-go="park" onclick="go('park')">Parc bacs</button>
+<button id="historyNav" data-go="history" onclick="go('history')">Historique</button>
 <button id="kpiNav" data-go="kpi" onclick="go('kpi')">KPI</button>
 <button data-go="admin" onclick="go('admin')">Back-office</button>
 </nav>
@@ -93,6 +95,16 @@ h1{font-size:25px;margin:0 0 5px}h2{font-size:21px;margin:0 0 8px}h3{font-size:1
 <div class="kpi"><b id="clientCount">5</b><span class="small">chez clients</span></div>
 </div>
 <div id="parkDetails"></div>
+</section>
+
+<section id="history" class="step">
+<h2>Historique des livraisons</h2>
+<div id="historyDenied" class="notice err" style="display:none">Accès réservé au profil Pharmacien.</div>
+<div id="historyContent">
+<div class="small">Recherche par pharmacie, code pharmacie, tournée, opérateur ou numéro de bac.</div>
+<input id="historySearch" class="input history-search" placeholder="Ex. Pharmacie Vilmorin, PH-001463, BAC-000001..." oninput="renderHistory()">
+<div id="historyResults"></div>
+</div>
 </section>
 
 <section id="kpi" class="step">
@@ -150,7 +162,7 @@ const defaultRoutes=[
 function n(id){return document.getElementById(id)}
 function notice(id,msg,type='info'){const el=n(id);if(el)el.innerHTML='<div class="notice '+type+'">'+msg+'</div>'}
 function freshState(){return {
- appVersion:48,
+ appVersion:49,
  currentUser:{id:'PHARMA-DEMO',name:'Pharmacien démo',role:'pharmacist'},
  routes:defaultRoutes.map(r=>({...r,pharmacies:[...r.pharmacies]})),
  selectedRoute:null,
@@ -168,23 +180,25 @@ function freshState(){return {
 }}
 function normalizeRoute(r){return {id:r.id,name:r.name||r.id,published:!!r.published,pharmacies:Array.isArray(r.pharmacies)?r.pharmacies.filter(pid=>catalog.some(p=>p.id===pid)):[]}}
 function normalizeLoad(d){d=d&&typeof d==='object'?d:{};return {bins:Array.isArray(d.bins)?d.bins:[],parcels:Number.isFinite(d.parcels)?d.parcels:0,done:!!d.done,noOrder:!!d.noOrder}}
-function normalizeDelivered(d){d=d&&typeof d==='object'?d:{};return {bins:Array.isArray(d.bins)?d.bins:[],parcels:Number.isFinite(d.parcels)?d.parcels:0,returns:Array.isArray(d.returns)?d.returns:[],done:!!d.done,manualBins:Array.isArray(d.manualBins)?d.manualBins:[],wrongReturns:Array.isArray(d.wrongReturns)?d.wrongReturns:[],skips:Number.isFinite(d.skips)?d.skips:0,navigationOpenedAt:d.navigationOpenedAt||null,firstActionAt:d.firstActionAt||null,completedAt:d.completedAt||null,heldBeforeCount:Number.isFinite(d.heldBeforeCount)?d.heldBeforeCount:null,parcelOverrideConfirmed:!!d.parcelOverrideConfirmed}}
+function normalizeDelivered(d){d=d&&typeof d==='object'?d:{};return {bins:Array.isArray(d.bins)?d.bins:[],parcels:Number.isFinite(d.parcels)?d.parcels:0,returns:Array.isArray(d.returns)?d.returns:[],done:!!d.done,manualBins:Array.isArray(d.manualBins)?d.manualBins:[],wrongReturns:Array.isArray(d.wrongReturns)?d.wrongReturns:[],skips:Number.isFinite(d.skips)?d.skips:0,navigationOpenedAt:d.navigationOpenedAt||null,firstActionAt:d.firstActionAt||null,completedAt:d.completedAt||null,heldBeforeCount:Number.isFinite(d.heldBeforeCount)?d.heldBeforeCount:null,heldBeforeBins:Array.isArray(d.heldBeforeBins)?d.heldBeforeBins:[],parcelOverrideConfirmed:!!d.parcelOverrideConfirmed}}
 function loadState(){
  let saved=null;
  try{
+   const raw49=localStorage.getItem('lsn-v49');
    const raw48=localStorage.getItem('lsn-v48');
    const raw47=localStorage.getItem('lsn-v47');
-   if(raw48)saved=JSON.parse(raw48);
+   if(raw49)saved=JSON.parse(raw49);
+   else if(raw48)saved=JSON.parse(raw48);
    else if(raw47)saved=JSON.parse(raw47);
    else {const raw46=localStorage.getItem('lsn-v46');if(raw46)saved=JSON.parse(raw46);else {const raw45=localStorage.getItem('lsn-v45');if(raw45)saved=JSON.parse(raw45)}}
  }catch(e){saved=null}
  if(saved&&Array.isArray(saved.routes)){
-   saved.appVersion=48;
+   saved.appVersion=49;
    saved.routes=saved.routes.filter(r=>r&&typeof r.id==='string').map(normalizeRoute);
    saved.selectedRoute=typeof saved.selectedRoute==='string'&&saved.routes.some(r=>r.id===saved.selectedRoute)?saved.selectedRoute:null;
    saved.adminSelectedRoute=typeof saved.adminSelectedRoute==='string'&&saved.routes.some(r=>r.id===saved.adminSelectedRoute)?saved.adminSelectedRoute:null;
    saved.currentUser=saved.currentUser&&typeof saved.currentUser==='object'?saved.currentUser:freshState().currentUser;
-   saved.currentScreen=['home','load','delivery','park','kpi','admin'].includes(saved.currentScreen)?saved.currentScreen:'home';
+   saved.currentScreen=['home','load','delivery','park','history','kpi','admin'].includes(saved.currentScreen)?saved.currentScreen:'home';
    saved.pharmacyMeta=saved.pharmacyMeta&&typeof saved.pharmacyMeta==='object'?saved.pharmacyMeta:{};
    Object.values(saved.pharmacyMeta).forEach(m=>{if(m&&m.keyNumber&&!m.doorCode&&!m.intercom&&!m.alarmCode&&!m.instructions)m.instructions=String(m.keyNumber);if(m&&'keyNumber' in m)delete m.keyNumber});
    saved.loadByRoute=saved.loadByRoute&&typeof saved.loadByRoute==='object'?saved.loadByRoute:{};
@@ -214,13 +228,13 @@ function loadState(){
 }
 let state=loadState();
 let currentLoadPharmacy=null,currentDeliveryPharmacy=null,cameraTarget=null,stream=null,scanTimer=null,loadSubView='pending';
-function save(){try{localStorage.setItem('lsn-v48',JSON.stringify(state))}catch(e){}}
+function save(){try{localStorage.setItem('lsn-v49',JSON.stringify(state))}catch(e){}}
 function isPharmacist(){return state.currentUser?.role==='pharmacist'}
 function operatorName(){return state.currentUser?.name||state.currentUser?.id||'Utilisateur'}
 function applyRoleFromUrl(){try{const role=new URLSearchParams(location.search).get('role');if(role==='operator'||role==='pharmacist')state.currentUser={...(state.currentUser||{}),role,name:role==='pharmacist'?'Pharmacien démo':'Opérateur démo'};}catch(e){}}
-function renderAccess(){const k=n('kpiNav');if(k)k.style.display=isPharmacist()?'':'none';const b=n('userRoleBadge');if(b)b.textContent=isPharmacist()?'Pharmacien':'Opérateur';if(!isPharmacist()&&state.currentScreen==='kpi')state.currentScreen='home'}
+function renderAccess(){const k=n('kpiNav'),h=n('historyNav');if(k)k.style.display=isPharmacist()?'':'none';if(h)h.style.display=isPharmacist()?'':'none';const b=n('userRoleBadge');if(b)b.textContent=isPharmacist()?'Pharmacien':'Opérateur';if(!isPharmacist()&&['kpi','history'].includes(state.currentScreen))state.currentScreen='home'}
 function go(id){
- if(id==='kpi'&&!isPharmacist()){alert('Accès réservé au profil Pharmacien.');id='home'}
+ if(['kpi','history'].includes(id)&&!isPharmacist()){alert('Accès réservé au profil Pharmacien.');id='home'}
  const target=n(id);if(!target)return;
  state.currentScreen=id;
  document.querySelectorAll('.step').forEach(x=>x.classList.remove('active'));
@@ -319,7 +333,7 @@ function startDeliveryTour(){
  const r=routeObj();if(!r)return;const loads=routeLoad(r.id),pending=r.pharmacies.filter(pid=>!loads[pid]?.done);
  if(pending.length){notice('loadNotice','⚠️ '+pending.length+' pharmacie(s) restent à traiter.','warn');return}
  state.deliveryStarted[r.id]=true;
- if(!state.tourRunMeta[r.id])state.tourRunMeta[r.id]={startedAt:Date.now(),operator:{id:state.currentUser?.id||'',name:operatorName(),role:state.currentUser?.role||''}};
+ if(!state.tourRunMeta[r.id]){const now=Date.now();state.tourRunMeta[r.id]={runId:'RUN-'+now+'-'+r.id,startedAt:now,operator:{id:state.currentUser?.id||'',name:operatorName(),role:state.currentUser?.role||''}};}
  const targets=deliveryTargets(r),delivered=routeDelivered(r.id);let idx=targets.findIndex(pid=>!delivered[pid]?.done);if(idx<0)idx=0;
  state.deliveryCursorByRoute[r.id]=idx;currentLoadPharmacy=null;currentDeliveryPharmacy=targets[idx]||null;save();go('delivery');
 }
@@ -337,7 +351,7 @@ function renderDelivery(){
  if(!state.deliveryStarted[r.id]){n('nextDelivery').innerHTML='<div class="notice info">Le chargement est terminé. Passe en mode livraison depuis l’onglet Chargement.</div><button class="btn dark" onclick="go(\'load\')">RETOUR AU CHARGEMENT</button>';return}
  const targets=deliveryTargets(r);
  if(!targets.length){n('nextDelivery').innerHTML='<div class="notice info">Aucune pharmacie à livrer sur cette tournée.</div>';return}
- if(targets.every(pid=>delivered[pid]?.done)){n('nextDelivery').innerHTML='<div class="notice ok">✅ Tournée de livraison terminée.</div><button class="btn primary" onclick="openReturnToLSN()">↩ RETOUR LSN PHARMA — OUVRIR WAZE</button><button class="btn green" onclick="closeAndResetTour()">✓ TERMINER LA TOURNÉE ET REMETTRE À ZÉRO</button>';return}
+ if(targets.every(pid=>delivered[pid]?.done)){const list=targets.map(pid=>{const p=ph(pid),d=normalizeDelivered(delivered[pid]);return `<div class="ph"><div class="row"><span><b>${p?.name||pid}</b><br><span class="small">${d.bins.length} bac(s) · ${d.parcels} colis · ${d.returns.length} retour(s)</span></span><button class="mini" onclick="reopenDelivery('${pid}')">MODIFIER</button></div></div>`}).join('');n('nextDelivery').innerHTML=`<div class="card"><h3>Livraisons terminées</h3>${list}</div><button class="btn primary" onclick="openReturnToLSN()">↩ RETOUR LSN PHARMA — OUVRIR WAZE</button><button class="btn green" onclick="closeAndResetTour()">✓ TERMINER LA TOURNÉE</button>`;return}
  let idx=Number.isInteger(state.deliveryCursorByRoute[r.id])?state.deliveryCursorByRoute[r.id]:targets.findIndex(pid=>!delivered[pid]?.done);
  if(idx<0||idx>=targets.length)idx=Math.max(0,targets.findIndex(pid=>!delivered[pid]?.done));
  state.deliveryCursorByRoute[r.id]=idx;currentDeliveryPharmacy=targets[idx];
@@ -347,10 +361,10 @@ function renderDelivery(){
  const access=pharmacyAccess(pid);const accessHtml=[access.doorCode?`<div><strong>Code porte :</strong> ${access.doorCode}</div>`:'',access.intercom?`<div><strong>Interphone :</strong> ${access.intercom}</div>`:'',access.alarmCode?`<div><strong>Code alarme :</strong> ${access.alarmCode}</div>`:'',access.instructions?`<div><strong>Accès :</strong> ${access.instructions}</div>`:''].join('');
  n('nextDelivery').innerHTML=`<div class="route-position">${idx+1}/${targets.length} · ${r.name}</div><div class="card"><h3>${p?.name||pid}</h3><div class="meta">${p?.address||''}</div><div class="delivery-ident"><div><strong>Code pharmacie :</strong> ${pid}</div>${accessHtml}</div><div class="kpis"><div class="kpi"><b>${load.bins.length}</b><span class="small">bacs attendus</span></div><div class="kpi"><b>${load.parcels}</b><span class="small">colis</span></div><div class="kpi"><b>${held.length}</b><span class="small">bacs chez client</span></div></div><button class="btn primary" onclick="openDeliveryMaps('${pid}','${encodeURIComponent(p?.address||'')}')">OUVRIR WAZE / GPS</button></div>
  <div class="delivery-nav"><button class="btn secondary" ${prevDisabled} onclick="moveDelivery(-1)">← PRÉCÉDENTE</button><button class="btn secondary" ${nextDisabled} onclick="moveDelivery(1)">SUIVANTE / SAUTER →</button></div>
- ${d.done?`<div class="notice ok">✅ Cette livraison a déjà été validée.</div>`:`<div class="card"><h3>Bacs attendus</h3><div class="small">Les numéros restent visibles pour le contrôle visuel. Scanner directement les bacs à remettre.</div><ul class="list">${expected}</ul>
+ ${d.done?`<div class="card"><div class="row"><strong>Livraison validée</strong><button class="mini" onclick="reopenDelivery('${pid}')">MODIFIER</button></div><div class="small">Tu peux rouvrir cette livraison tant que la tournée n’est pas terminée.</div></div>`:`<div class="card"><h3>Bacs attendus</h3><div class="small">Les numéros restent visibles pour le contrôle visuel. Scanner directement les bacs à remettre.</div><ul class="list">${expected}</ul>
  <div class="scangrid"><button class="btn primary" onclick="smartScan('binDelivery')">📷 Caméra</button><button class="btn secondary" onclick="focusZebra('binDelivery')">🔫 Scan Zebra</button></div><input id="binDelivery" class="input" placeholder="BAC-000001" autocomplete="off"><button class="btn secondary" onclick="handleBinDelivery()">LIVRER LE BAC</button>
  <div class="label">Colis livrés</div><div class="counter"><button onclick="delParcel(-1)">−</button><span>${d.parcels}</span><button onclick="delParcel(1)">+</button></div><hr style="border:0;border-top:1px solid #eee;margin:14px 0"><h3>Bacs à récupérer (${held.length})</h3><div class="small">${held.join(', ')||'Aucun bac enregistré chez le client'}</div>
- <div class="scangrid"><button class="btn primary" onclick="smartScan('binReturn')">📷 Caméra</button><button class="btn secondary" onclick="focusZebra('binReturn')">🔫 Scan Zebra</button></div><input id="binReturn" class="input" placeholder="BAC-OLD-001" autocomplete="off"><button class="btn secondary" onclick="handleReturn()">BAC RESTITUÉ</button><ul class="list">${d.returns.map(x=>'<li>↩ '+x+'</li>').join('')}</ul><button class="btn green" onclick="finishDelivery()">✓ VALIDER LA LIVRAISON</button></div>`}`;
+ <div class="scangrid"><button class="btn primary" onclick="smartScan('binReturn')">📷 Caméra</button><button class="btn secondary" onclick="focusZebra('binReturn')">🔫 Scan Zebra</button></div><input id="binReturn" class="input" placeholder="BAC-OLD-001" autocomplete="off"><button class="btn secondary" onclick="handleReturn()">BAC RESTITUÉ</button><ul class="list">${d.returns.map(x=>`<li><div class="row"><span>↩ ${x}</span><button class="mini" onclick="removeReturn('${x}')">RETIRER</button></div></li>`).join('')}</ul><button class="btn green" onclick="finishDelivery()">✓ VALIDER LA LIVRAISON</button></div>`}`;
  save();bindEnter('binDelivery',handleBinDelivery);bindEnter('binReturn',handleReturn);
 }
 function stampFirstAction(d){if(!d.firstActionAt)d.firstActionAt=Date.now()}
@@ -361,27 +375,36 @@ function manualDeliverBin(code){const r=routeObj();if(!r||!currentDeliveryPharma
 function handleBinDelivery(){const r=routeObj();if(!r||!currentDeliveryPharmacy)return;const delivered=routeDelivered(r.id);delivered[currentDeliveryPharmacy]=normalizeDelivered(delivered[currentDeliveryPharmacy]);const d=delivered[currentDeliveryPharmacy],load=routeLoad(r.id)[currentDeliveryPharmacy],code=n('binDelivery').value.trim().toUpperCase();if(!code||d.done)return;stampFirstAction(d);if(!load.bins.includes(code)){notice('deliveryNotice','❌ '+code+' n’appartient pas à cette pharmacie.','err');return}if(!d.bins.includes(code))d.bins.push(code);n('binDelivery').value='';save();renderDelivery()}
 function delParcel(delta){const r=routeObj();if(!r||!currentDeliveryPharmacy)return;const delivered=routeDelivered(r.id);delivered[currentDeliveryPharmacy]=normalizeDelivered(delivered[currentDeliveryPharmacy]);const d=delivered[currentDeliveryPharmacy],load=routeLoad(r.id)[currentDeliveryPharmacy];if(d.done)return;const next=Math.max(0,d.parcels+delta);if(delta>0&&next>(load?.parcels||0)){if(!confirm(`⚠️ ${next} colis livré(s) alors que ${(load?.parcels||0)} étaient déclarés au chargement. Confirmer cet écart ?`))return;d.parcelOverrideConfirmed=true;}stampFirstAction(d);d.parcels=next;save();renderDelivery()}
 function handleReturn(){const r=routeObj();if(!r||!currentDeliveryPharmacy)return;const delivered=routeDelivered(r.id);delivered[currentDeliveryPharmacy]=normalizeDelivered(delivered[currentDeliveryPharmacy]);const d=delivered[currentDeliveryPharmacy],code=n('binReturn').value.trim().toUpperCase();if(!code||d.done)return;stampFirstAction(d);if(!d.returns.includes(code))d.returns.push(code);n('binReturn').value='';save();renderDelivery()}
+function removeReturn(code){const r=routeObj();if(!r||!currentDeliveryPharmacy)return;const d=routeDelivered(r.id)[currentDeliveryPharmacy];if(!d||d.done)return;d.returns=(d.returns||[]).filter(x=>x!==code);save();renderDelivery()}
+function reopenDelivery(pid){
+ const r=routeObj();if(!r)return;const delivered=routeDelivered(r.id);delivered[pid]=normalizeDelivered(delivered[pid]);const d=delivered[pid];if(!d.done)return;
+ const validReturns=(d.returns||[]).filter(x=>!(d.wrongReturns||[]).includes(x));const current=Array.isArray(state.bins.client[pid])?state.bins.client[pid]:[];
+ const before=(d.heldBeforeBins&&d.heldBeforeBins.length)?[...d.heldBeforeBins]:[...new Set(current.filter(x=>!(d.bins||[]).includes(x)).concat(validReturns))];
+ state.bins.client[pid]=before;state.bins.available=(state.bins.available||[]).filter(x=>!validReturns.includes(x));d.done=false;d.completedAt=null;d.wrongReturns=[];d.heldBeforeCount=before.length;d.heldBeforeBins=[...before];
+ const targets=deliveryTargets(r),idx=targets.indexOf(pid);if(idx>=0)state.deliveryCursorByRoute[r.id]=idx;currentDeliveryPharmacy=pid;save();renderDelivery();
+}
 function finishDelivery(){
  const r=routeObj();if(!r||!currentDeliveryPharmacy)return;const pid=currentDeliveryPharmacy,load=routeLoad(r.id)[pid],delivered=routeDelivered(r.id);delivered[pid]=normalizeDelivered(delivered[pid]);const d=delivered[pid];if(d.done)return;
- const held=state.bins.client[pid]||[];if(d.heldBeforeCount===null)d.heldBeforeCount=held.length;
+ const held=state.bins.client[pid]||[];if(d.heldBeforeCount===null)d.heldBeforeCount=held.length;if(!d.heldBeforeBins?.length)d.heldBeforeBins=[...held];
  const wrongReturns=d.returns.filter(x=>!held.includes(x)),validReturns=d.returns.filter(x=>held.includes(x));
  const confirmationDiffs=[];if(d.bins.length!==load.bins.length)confirmationDiffs.push(`${d.bins.length}/${load.bins.length} bacs`);if(d.parcels!==load.parcels)confirmationDiffs.push(`${d.parcels}/${load.parcels} colis`);if(confirmationDiffs.length&&!confirm('⚠️ Écart entre chargement et livraison : '+confirmationDiffs.join(' · ')+'. Confirmer la livraison avec cet écart ?'))return;
  state.bins.client[pid]=held.filter(x=>!validReturns.includes(x)).concat(d.bins);state.bins.available=[...new Set(state.bins.available.concat(validReturns))];d.done=true;d.completedAt=Date.now();d.wrongReturns=wrongReturns;
  let diffs=[];if(d.bins.length!==load.bins.length)diffs.push(`${d.bins.length}/${load.bins.length} bacs livrés`);if(d.parcels!==load.parcels)diffs.push(`${d.parcels}/${load.parcels} colis livrés`);let remain=held.length-validReturns.length;if(remain>0)diffs.push(`${remain} ancien(s) bac(s) restent chez le client`);if(wrongReturns.length)diffs.push(`bac(s) récupéré(s) non rattaché(s): ${wrongReturns.join(', ')}`);
  const targets=deliveryTargets(r),cur=targets.indexOf(pid);let next=-1;for(let i=cur+1;i<targets.length;i++){if(!delivered[targets[i]]?.done){next=i;break}}if(next<0){for(let i=0;i<cur;i++){if(!delivered[targets[i]]?.done){next=i;break}}}if(next>=0)state.deliveryCursorByRoute[r.id]=next;
- save();notice('deliveryNotice',diffs.length?'⚠️ Livraison enregistrée avec écarts : '+diffs.join(' · '):'✅ Livraison conforme et enregistrée.',diffs.length?'warn':'ok');renderDelivery();
+ save();if(diffs.length)notice('deliveryNotice','⚠️ Écart enregistré : '+diffs.join(' · '),'warn');else {const el=n('deliveryNotice');if(el)el.innerHTML=''}renderDelivery();
 }
 function minutesBetween(a,b){return a&&b?Math.max(0,(b-a)/60000):null}
 function countDeliveryAnomalies(load,d){let n=0;if((d?.bins?.length||0)!==(load?.bins?.length||0))n++;if((d?.parcels||0)!==(load?.parcels||0))n++;n+=(d?.wrongReturns?.length||0);return n}
 function closeAndResetTour(){
  const r=routeObj();if(!r)return;const targets=deliveryTargets(r),loads=routeLoad(r.id),delivered=routeDelivered(r.id);if(targets.some(pid=>!delivered[pid]?.done)){alert('Toutes les pharmacies à livrer ne sont pas terminées.');return}
- const meta=state.tourRunMeta[r.id]||{};const endedAt=Date.now();const records=targets.map(pid=>{const d=normalizeDelivered(delivered[pid]),l=normalizeLoad(loads[pid]);return {pharmacyId:pid,pharmacyName:ph(pid)?.name||pid,loadedBins:l.bins.length,deliveredBins:d.bins.length,loadedParcels:l.parcels,deliveredParcels:d.parcels,manualBins:d.manualBins.length,returns:d.returns.length,heldBefore:d.heldBeforeCount??0,wrongReturns:d.wrongReturns.length,skips:d.skips||0,travelActualMinutes:minutesBetween(d.navigationOpenedAt,d.firstActionAt),stopMinutes:minutesBetween(d.firstActionAt,d.completedAt),wazeReferenceMinutes:null,anomalies:countDeliveryAnomalies(l,d)}});
- state.tourHistory.push({id:'RUN-'+endedAt,routeId:r.id,routeName:r.name,operatorId:meta.operator?.id||state.currentUser?.id||'',operatorName:meta.operator?.name||operatorName(),startedAt:meta.startedAt||endedAt,endedAt,durationMinutes:minutesBetween(meta.startedAt||endedAt,endedAt)||0,pharmacies:records.length,anomalies:records.reduce((a,x)=>a+x.anomalies,0),manualBins:records.reduce((a,x)=>a+x.manualBins,0),skips:records.reduce((a,x)=>a+x.skips,0),records});
- delete state.loadByRoute[r.id];delete state.deliveredByRoute[r.id];delete state.tourRunMeta[r.id];state.deliveryStarted[r.id]=false;state.deliveryCursorByRoute[r.id]=0;currentLoadPharmacy=null;currentDeliveryPharmacy=null;loadSubView='pending';state.currentScreen='home';save();render();go('home');alert('Tournée archivée. Le chargement a été remis à zéro. Le parc de bacs est conservé.');
+ const meta=state.tourRunMeta[r.id]||{};const endedAt=Date.now();const records=targets.map(pid=>{const d=normalizeDelivered(delivered[pid]),l=normalizeLoad(loads[pid]);const anomalies=countDeliveryAnomalies(l,d);return {pharmacyId:pid,pharmacyName:ph(pid)?.name||pid,loadedBins:l.bins.length,loadedBinIds:[...l.bins],deliveredBins:d.bins.length,deliveredBinIds:[...d.bins],loadedParcels:l.parcels,deliveredParcels:d.parcels,manualBins:d.manualBins.length,manualBinIds:[...d.manualBins],returns:d.returns.length,returnedBinIds:[...d.returns],heldBefore:d.heldBeforeCount??0,heldBeforeBinIds:[...(d.heldBeforeBins||[])],wrongReturns:d.wrongReturns.length,wrongReturnIds:[...d.wrongReturns],skips:d.skips||0,navigationOpenedAt:d.navigationOpenedAt||null,firstActionAt:d.firstActionAt||null,completedAt:d.completedAt||null,travelActualMinutes:minutesBetween(d.navigationOpenedAt,d.firstActionAt),stopMinutes:minutesBetween(d.firstActionAt,d.completedAt),wazeReferenceMinutes:null,anomalies};});
+ state.tourHistory.push({id:meta.runId||('RUN-'+endedAt+'-'+r.id),routeId:r.id,routeName:r.name,operatorId:meta.operator?.id||state.currentUser?.id||'',operatorName:meta.operator?.name||operatorName(),startedAt:meta.startedAt||endedAt,endedAt,durationMinutes:minutesBetween(meta.startedAt||endedAt,endedAt)||0,pharmacies:records.length,anomalies:records.reduce((a,x)=>a+x.anomalies,0),manualBins:records.reduce((a,x)=>a+x.manualBins,0),skips:records.reduce((a,x)=>a+x.skips,0),records});
+ delete state.loadByRoute[r.id];delete state.deliveredByRoute[r.id];delete state.tourRunMeta[r.id];state.deliveryStarted[r.id]=false;state.deliveryCursorByRoute[r.id]=0;currentLoadPharmacy=null;currentDeliveryPharmacy=null;loadSubView='pending';state.selectedRoute=null;state.currentScreen='home';save();go('home');
 }
 function createRoute(){let id='T'+String(Math.max(0,...state.routes.map(r=>parseInt(r.id.slice(1))||0))+1).padStart(2,'0');state.routes.push({id,name:n('routeName').value.trim()||id,published:false,pharmacies:[]});state.adminSelectedRoute=id;save();renderAdmin()}
 function selectAdminRoute(rid){if(!state.routes.some(r=>r.id===rid))return;state.adminSelectedRoute=rid;save();renderAdmin()}
 function closeAdminRoute(){state.adminSelectedRoute=null;save();renderAdmin()}
+function saveAdminRouteAndClose(){state.adminSelectedRoute=null;save();renderAdmin();renderDriverRoutes()}
 function addPh(pid,rid){const r=state.routes.find(x=>x.id===rid);if(r&&!r.pharmacies.includes(pid))r.pharmacies.push(pid);save();renderAdmin();renderDriverRoutes()}
 function removePh(pid,rid){const r=state.routes.find(x=>x.id===rid);if(!r)return;r.pharmacies=r.pharmacies.filter(x=>x!==pid);if(state.loadByRoute[rid])delete state.loadByRoute[rid][pid];if(state.deliveredByRoute[rid])delete state.deliveredByRoute[rid][pid];save();renderAdmin();renderDriverRoutes()}
 function movePh(pid,rid,delta){const r=state.routes.find(x=>x.id===rid);if(!r)return;const i=r.pharmacies.indexOf(pid),j=i+delta;if(i>=0&&j>=0&&j<r.pharmacies.length)[r.pharmacies[i],r.pharmacies[j]]=[r.pharmacies[j],r.pharmacies[i]];save();renderAdmin()}
@@ -397,11 +420,23 @@ function renderAdmin(){
  if(main)main.style.display='none';if(detail)detail.style.display='block';
  const assigned=target.pharmacies.map((pid,i)=>{const a=pharmacyAccess(pid);return `<div class="ph"><div class="row"><span><b>${i+1}. ${ph(pid)?.name||pid}</b><br><span class="small">${ph(pid)?.address||''}</span></span><span><button class="mini" onclick="movePh('${pid}','${target.id}',-1)">↑</button> <button class="mini" onclick="movePh('${pid}','${target.id}',1)">↓</button> <button class="mini" onclick="removePh('${pid}','${target.id}')">×</button></span></div><div class="ph-admin-meta"><div class="small"><strong>Code pharmacie :</strong> ${pid}</div><label class="label">Code porte (facultatif)</label><input class="input" value="${escAttr(a.doorCode)}" placeholder="Ex. 2580A" onchange="setPharmacyAccess('${pid}','doorCode',this.value)"><label class="label">Interphone (facultatif)</label><input class="input" value="${escAttr(a.intercom)}" placeholder="Ex. Pharmacie / 12B" onchange="setPharmacyAccess('${pid}','intercom',this.value)"><label class="label">Code alarme (facultatif)</label><input class="input" value="${escAttr(a.alarmCode)}" placeholder="Prototype : ne pas saisir un vrai code" onchange="setPharmacyAccess('${pid}','alarmCode',this.value)"><label class="label">Instructions d'accès (facultatif)</label><input class="input" value="${escAttr(a.instructions)}" placeholder="Ex. clé dans boîte sécurisée..." onchange="setPharmacyAccess('${pid}','instructions',this.value)"></div></div>`}).join('')||'<div class="small">Aucune pharmacie.</div>';
  const pool=catalog.map(p=>{const inRoute=target.pharmacies.includes(p.id);return `<div class="ph"><div class="row"><span><b>${p.name}</b><br><span class="small">${p.id}</span></span>${inRoute?'<span class="status ok">Ajoutée</span>':`<button class="mini add" onclick="addPh('${p.id}','${target.id}')">AJOUTER</button>`}</div></div>`}).join('');
- detail.innerHTML=`<button class="mini" onclick="closeAdminRoute()">← RETOUR AUX TOURNÉES</button><div class="card"><div class="admin-detail-title"><div><h3>${target.name}</h3><div class="small">${target.pharmacies.length} pharmacie(s)</div></div><span class="status ${target.published?'ok':'warn'}">${target.published?'Publiée':'Brouillon'}</span></div><button class="btn ${target.published?'secondary':'green'}" onclick="${target.published?`unpublish('${target.id}')`:`publish('${target.id}')`}">${target.published?'DÉPUBLIER LA TOURNÉE':'PUBLIER LA TOURNÉE'}</button></div><div class="notice warn">⚠️ Prototype public : ne pas saisir de vrais codes d’alarme ou d’accès tant qu’une authentification et un stockage sécurisé ne sont pas en place.</div><div class="card"><h3>Pharmacies affectées</h3>${assigned}</div><div class="card"><h3>Ajouter / retirer des pharmacies</h3>${pool}</div>`;
+ detail.innerHTML=`<button class="mini" onclick="closeAdminRoute()">← RETOUR AUX TOURNÉES</button><div class="card"><div class="admin-detail-title"><div><h3>${target.name}</h3><div class="small">${target.pharmacies.length} pharmacie(s)</div></div><span class="status ${target.published?'ok':'warn'}">${target.published?'Publiée':'Brouillon'}</span></div><button class="btn ${target.published?'secondary':'green'}" onclick="${target.published?`unpublish('${target.id}')`:`publish('${target.id}')`}">${target.published?'DÉPUBLIER LA TOURNÉE':'PUBLIER LA TOURNÉE'}</button></div><div class="notice warn">⚠️ Prototype public : ne pas saisir de vrais codes d’alarme ou d’accès tant qu’une authentification et un stockage sécurisé ne sont pas en place.</div><div class="card"><h3>Pharmacies affectées</h3>${assigned}</div><div class="card"><h3>Ajouter / retirer des pharmacies</h3>${pool}</div><button class="btn green" onclick="saveAdminRouteAndClose()">✓ ENREGISTRER</button>`;
 }
 function renderPark(){
  const activeLoaded=new Set();for(const [rid,loads] of Object.entries(state.loadByRoute||{})){const delivered=state.deliveredByRoute?.[rid]||{};Object.entries(loads||{}).forEach(([pid,d])=>{if(!d?.noOrder&&!delivered?.[pid]?.done)(d?.bins||[]).forEach(b=>activeLoaded.add(b))})}
  const client=Object.values(state.bins.client).reduce((a,x)=>a+(Array.isArray(x)?x.length:0),0);n('availableCount').textContent=state.bins.available.length;n('loadedCount').textContent=activeLoaded.size;n('clientCount').textContent=client;n('parkDetails').innerHTML=Object.entries(state.bins.client).map(([pid,b])=>`<div class="card"><strong>${ph(pid)?.name||pid}</strong><div class="meta">${b.length} bac(s) : ${b.join(', ')||'aucun'}</div></div>`).join('');
+}
+function getHistoryRecords(){
+ const out=[];
+ (state.tourHistory||[]).forEach(run=>(run.records||[]).forEach(rec=>out.push({...rec,runId:run.id,routeId:run.routeId,routeName:run.routeName,operatorId:run.operatorId,operatorName:run.operatorName,routeStartedAt:run.startedAt,routeEndedAt:run.endedAt,archived:true})));
+ for(const r of state.routes||[]){const loads=state.loadByRoute?.[r.id]||{},delivered=state.deliveredByRoute?.[r.id]||{},meta=state.tourRunMeta?.[r.id]||{};for(const pid of Object.keys(delivered)){const d=normalizeDelivered(delivered[pid]);if(!d.done)continue;const l=normalizeLoad(loads[pid]);out.push({runId:meta.runId||('ACTIVE-'+r.id),routeId:r.id,routeName:r.name,operatorId:meta.operator?.id||state.currentUser?.id||'',operatorName:meta.operator?.name||operatorName(),routeStartedAt:meta.startedAt||null,routeEndedAt:null,archived:false,pharmacyId:pid,pharmacyName:ph(pid)?.name||pid,loadedBins:l.bins.length,loadedBinIds:[...l.bins],deliveredBins:d.bins.length,deliveredBinIds:[...d.bins],loadedParcels:l.parcels,deliveredParcels:d.parcels,manualBins:d.manualBins.length,manualBinIds:[...d.manualBins],returns:d.returns.length,returnedBinIds:[...d.returns],heldBefore:d.heldBeforeCount??0,heldBeforeBinIds:[...(d.heldBeforeBins||[])],wrongReturns:d.wrongReturns.length,wrongReturnIds:[...d.wrongReturns],skips:d.skips||0,navigationOpenedAt:d.navigationOpenedAt||null,firstActionAt:d.firstActionAt||null,completedAt:d.completedAt||null,travelActualMinutes:minutesBetween(d.navigationOpenedAt,d.firstActionAt),stopMinutes:minutesBetween(d.firstActionAt,d.completedAt),wazeReferenceMinutes:null,anomalies:countDeliveryAnomalies(l,d)});}}
+ return out.sort((a,b)=>(b.completedAt||b.routeEndedAt||0)-(a.completedAt||a.routeEndedAt||0));
+}
+function renderHistory(){
+ const denied=n('historyDenied'),content=n('historyContent'),results=n('historyResults');if(!denied||!content||!results)return;if(!isPharmacist()){denied.style.display='block';content.style.display='none';return}denied.style.display='none';content.style.display='block';
+ const q=String(n('historySearch')?.value||'').trim().toLowerCase();let rows=getHistoryRecords();if(q)rows=rows.filter(x=>[x.pharmacyName,x.pharmacyId,x.routeName,x.operatorName,...(x.loadedBinIds||[]),...(x.deliveredBinIds||[]),...(x.returnedBinIds||[])].join(' ').toLowerCase().includes(q));
+ if(!rows.length){results.innerHTML='<div class="notice info">Aucune livraison trouvée.</div>';return}
+ results.innerHTML=rows.map(x=>{const at=x.completedAt||x.routeEndedAt,parcelDiff=(x.loadedParcels||0)!==(x.deliveredParcels||0),binDiff=(x.loadedBins||0)!==(x.deliveredBins||0),status=(parcelDiff||binDiff||x.wrongReturns)?'<span class="history-alert">⚠️ Écart</span>':'<span class="history-ok">✓ Sans écart quantitatif</span>';return `<div class="history-card"><div class="row"><div><strong>${x.pharmacyName}</strong><div class="small">${x.pharmacyId}</div></div>${status}</div><div class="history-line"><strong>${at?new Date(at).toLocaleString('fr-FR'):'Heure non disponible'}</strong></div><div class="history-line">Tournée : <strong>${x.routeName}</strong></div><div class="history-line">Opérateur : <strong>${x.operatorName||'—'}</strong></div><div class="chips"><span class="chip">Chargé : ${x.loadedBins||0} bac(s) + ${x.loadedParcels||0} colis</span><span class="chip">Livré : ${x.deliveredBins||0} bac(s) + ${x.deliveredParcels||0} colis</span><span class="chip">Retours : ${x.returns||0}</span></div><div class="history-line"><strong>Bacs chargés :</strong> <span class="mono">${(x.loadedBinIds||[]).join(', ')||'aucun'}</span></div><div class="history-line"><strong>Bacs livrés :</strong> <span class="mono">${(x.deliveredBinIds||[]).join(', ')||'aucun'}</span></div><div class="history-line"><strong>Bacs restitués :</strong> <span class="mono">${(x.returnedBinIds||[]).join(', ')||'aucun'}</span></div>${(x.manualBinIds||[]).length?`<div class="history-line"><strong>Validations manuelles :</strong> <span class="mono">${x.manualBinIds.join(', ')}</span></div>`:''}${x.skips?`<div class="history-line"><strong>Pharmacie sautée :</strong> ${x.skips} fois</div>`:''}</div>`}).join('');
 }
 function fmtMin(v){if(v===null||v===undefined||!Number.isFinite(v))return '—';const m=Math.round(v);return m<60?m+' min':Math.floor(m/60)+' h '+String(m%60).padStart(2,'0')}
 function renderKpi(){
@@ -414,7 +449,7 @@ function renderKpi(){
  const byOp={};h.forEach(x=>{const k=x.operatorName||'Inconnu';if(!byOp[k])byOp[k]={runs:0,dur:0,an:0,man:0};byOp[k].runs++;byOp[k].dur+=x.durationMinutes||0;byOp[k].an+=x.anomalies||0;byOp[k].man+=x.manualBins||0});n('kpiOperatorTable').innerHTML=Object.entries(byOp).map(([op,v])=>`<div class="ph"><div class="row"><strong>${op}</strong><span>${v.runs} tournée(s)</span></div><div class="small">Durée moyenne : ${fmtMin(v.dur/v.runs)} · Anomalies : ${v.an} · Bacs manuels : ${v.man}</div></div>`).join('');
  const travel=allRec.filter(x=>Number.isFinite(x.travelActualMinutes));n('kpiWaze').innerHTML=`<div class="small"><strong>Temps réels de trajet mesurés :</strong> ${travel.length?fmtMin(travel.reduce((a,x)=>a+x.travelActualMinutes,0)/travel.length):'—'}</div><div class="notice info">La comparaison automatique « réel vs Waze » sera disponible lorsque l’ETA théorique sera récupéré par une API de navigation. L’application n’invente pas cette valeur.</div>`;
 }
-function render(){renderAccess();renderDriverRoutes();renderLoad();renderDelivery();renderAdmin();renderPark();renderKpi()}
+function render(){renderAccess();renderDriverRoutes();renderLoad();renderDelivery();renderAdmin();renderPark();renderHistory();renderKpi()}
 function bindEnter(id,fn){setTimeout(()=>{const el=n(id);if(el)el.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();fn()}}},0)}
 function focusZebra(id){const el=n(id);if(el){el.focus();el.select();notice(id==='pharmacyLoad'?'loadNotice':'deliveryNotice','🔫 Champ prêt. Appuie sur la gâchette du Zebra : le scanner doit saisir le code puis envoyer Entrée.','info')}}
 let cameraLoop=false;
