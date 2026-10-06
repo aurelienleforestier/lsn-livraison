@@ -1,11 +1,11 @@
-LSN PHARMA — Livraison V4.1 correctif GitHub Pages
+LSN PHARMA — Livraison V4.3
 
-Correctifs :
-- démarrage robuste même si le stockage local contient une ancienne version ou est bloqué ;
-- navigation Tournées / Chargement / Livraison / Parc bacs / Back-office sécurisée ;
-- affichage d'une erreur visible si un problème JavaScript survient ;
-- service worker mis à jour pour éviter de rester bloqué sur une ancienne version ;
-- Tournée 03 présente et publiée par défaut ;
-- scanner HTTPS conservé.
+Modifications :
+- suppression complète de l’affectation d’un livreur à une tournée ;
+- suppression complète du véhicule ;
+- suppression de l’horaire de départ prévu ;
+- l’opérateur ayant effectué la tournée sera identifié ultérieurement via son compte connecté ;
+- écran Tournées allégé : suppression des textes « Tournées disponibles » et « Seules les tournées publiées apparaissent ici » ;
+- publication d’une tournée indépendante de tout livreur ou véhicule.
 
 Pour GitHub Pages : remplacer index.html, sw.js, manifest.webmanifest et README.txt à la racine du dépôt.
