@@ -11,6 +11,7 @@ from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse, HTMLResponse
 from pydantic import BaseModel, Field
 from controls import locations, control_transition
+from backup import snapshot, encrypt_snapshot, production_checks
 from sqlalchemy import create_engine, String, Boolean, DateTime, Integer, Text, ForeignKey, select, inspect, text, update
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session, sessionmaker
 
@@ -30,6 +31,7 @@ COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in {"1","true","yes"
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, future=True, pool_pre_ping=True, connect_args=connect_args)
+production_checks(engine)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 class Base(DeclarativeBase):
@@ -171,7 +173,7 @@ def init_database():
         create_initial_admin(db)
 
 DATABASE_READY = False
-if DATABASE_CONFIGURED or not REQUIRE_DATABASE:
+if (DATABASE_CONFIGURED or not REQUIRE_DATABASE) and os.getenv("LSN_BACKUP_TOOL") != "true":
     init_database()
     DATABASE_READY = True
 app = FastAPI(title="LSN PHARMA Interne — Test", docs_url=None, redoc_url=None, openapi_url=None)
@@ -317,7 +319,7 @@ def admin_read_auth(auth=Depends(current_auth)):
     return u, s
 
 @app.get("/health")
-def health(): return {"ok": True, "databaseReady": DATABASE_READY, "version": "6.2-validation"}
+def health(): return {"ok": True, "databaseReady": DATABASE_READY, "version": "6.3-validation"}
 
 @app.get("/")
 def root(request: Request, db: Session = Depends(db_session)):
@@ -644,3 +646,18 @@ def user_activity(auth=Depends(require_csrf), db: Session = Depends(db_session))
     session.last_activity_at = utcnow()
     db.commit()
     return {"ok":True}
+
+@app.get("/api/operations/status")
+def operations_status(auth=Depends(admin_read_auth)):
+    return {"databaseEngine":engine.dialect.name,"production":os.getenv("LSN_PRODUCTION","false").lower()=="true","encryptedExportConfigured":bool(os.getenv("LSN_BACKUP_KEY")),"remoteBackupApproved":os.getenv("LSN_BACKUP_STORAGE_APPROVED","false").lower()=="true","recoveryQualified":os.getenv("LSN_RECOVERY_QUALIFIED","false").lower()=="true","pharmaceuticalRelease":os.getenv("LSN_PHARMACEUTICAL_RELEASE","false").lower()=="true","minimumRetentionYears":5}
+
+@app.post("/api/operations/backup")
+def create_recovery_archive(auth=Depends(admin_auth), db: Session = Depends(db_session)):
+    u,_=auth
+    key=os.getenv("LSN_BACKUP_KEY")
+    if not key:raise HTTPException(503,"Clé de sauvegarde non configurée dans le coffre de secrets")
+    try:archive=encrypt_snapshot(snapshot(engine,Base.metadata),key)
+    except (ValueError,TypeError):raise HTTPException(503,"Configuration de sauvegarde invalide")
+    audit(db,u.id,"encrypted_backup_exported",{"sha256":hashlib.sha256(archive).hexdigest(),"bytes":len(archive)})
+    db.commit()
+    return Response(archive,media_type="application/octet-stream",headers={"Content-Disposition":"attachment; filename=lsn-recovery-"+utcnow().strftime("%Y%m%dT%H%M%SZ")+".fernet"})
