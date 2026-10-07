@@ -62,3 +62,124 @@ window.addEventListener('beforeunload',event=>{if(saveBusy||pendingState||syncBl
 
 const baseStartDelivery=startDeliveryTour;
 startDeliveryTour=function(){const r=routeObj();if(r){const m=state.tourRunMeta[r.id];if(m&&!m.startedAt){m.startedAt=Date.now();m.runId='RUN-'+m.startedAt+'-'+r.id;}}baseStartDelivery();};
+
+
+/* Mode Zebra terrain : DataWedge (sortie clavier) alimente un champ invisible.
+   Aucun bouton de caméra/scan n'est nécessaire dans le chargement. */
+(function installZebraLoadingMode(){
+ const style=document.createElement('style');
+ style.textContent=`
+  #zebraCapture{position:fixed!important;left:-10000px!important;top:0!important;width:1px!important;height:1px!important;opacity:.001!important;pointer-events:none!important}
+  #loadScanBox .scangrid,#loadScanBox #pharmacyLoad,#loadScanBox #pharmacyLoad + .btn{display:none!important}
+  #activeLoadPharmacy .scangrid{display:none!important}
+  #activeLoadPharmacy #binLoad,#activeLoadPharmacy #binLoad + .btn{display:none!important}
+  #activeLoadPharmacy.zebra-manual #binLoad,#activeLoadPharmacy.zebra-manual #binLoad + .btn{display:block!important}
+  .zebra-ready{padding:11px 12px;border-radius:12px;background:#eef2ff;color:#3730a3;font-size:13px;font-weight:700;margin:8px 0}
+ `;
+ document.head.appendChild(style);
+
+ const capture=document.createElement('input');
+ capture.id='zebraCapture';
+ capture.type='text';
+ capture.inputMode='none';
+ capture.autocomplete='off';
+ capture.setAttribute('aria-hidden','true');
+ document.body.appendChild(capture);
+
+ let scanTimer=null;
+ function loadingScanContext(){
+   return state?.currentScreen==='load' && !!state?.selectedRoute;
+ }
+ function focusCapture(){
+   if(!loadingScanContext())return;
+   const ae=document.activeElement;
+   if(ae && (ae.id==='binLoad' || ae.closest?.('#manualBinLoadControls')))return;
+   try{capture.focus({preventScroll:true});capture.select()}catch(e){try{capture.focus()}catch(_){}}
+ }
+ function processCapture(){
+   const value=String(capture.value||'').trim();
+   capture.value='';
+   if(!value||!loadingScanContext())return;
+   if(currentLoadPharmacy){
+     const input=n('binLoad');
+     if(!input)return;
+     input.value=value;
+     handleBinLoad();
+   }else{
+     const input=n('pharmacyLoad');
+     if(!input)return;
+     input.value=value;
+     handlePharmacyLoad();
+   }
+   setTimeout(focusCapture,80);
+ }
+ capture.addEventListener('keydown',e=>{
+   if(e.key==='Enter'||e.key==='Tab'){
+     e.preventDefault();
+     clearTimeout(scanTimer);
+     processCapture();
+   }
+ });
+ capture.addEventListener('input',()=>{
+   clearTimeout(scanTimer);
+   scanTimer=setTimeout(processCapture,140);
+ });
+
+ function decorateLoadUi(){
+   const scanBox=n('loadScanBox');
+   if(scanBox){
+     const h=scanBox.querySelector('h3');
+     const s=scanBox.querySelector('.small');
+     if(h)h.textContent='Scanner le QR code de la pharmacie';
+     if(s)s.textContent='Appuie sur la gâchette du Zebra. La pharmacie s’ouvre automatiquement après lecture.';
+   }
+   const wrap=n('activeLoadPharmacy');
+   if(wrap && currentLoadPharmacy){
+     const label=wrap.querySelector('.label');
+     if(label && !wrap.querySelector('.zebra-ready')){
+       const hint=document.createElement('div');
+       hint.className='zebra-ready';
+       hint.textContent='Zebra prêt : appuie sur la gâchette pour scanner les bacs.';
+       label.insertAdjacentElement('afterend',hint);
+     }
+     if(!wrap.querySelector('#manualBinLoadToggle')){
+       const input=n('binLoad');
+       const add=input?.nextElementSibling;
+       if(input && add){
+         const controls=document.createElement('div');
+         controls.id='manualBinLoadControls';
+         controls.style.marginTop='6px';
+         const toggle=document.createElement('button');
+         toggle.id='manualBinLoadToggle';
+         toggle.className='mini';
+         toggle.textContent='SAISIE MANUELLE';
+         toggle.onclick=()=>{
+           wrap.classList.toggle('zebra-manual');
+           const open=wrap.classList.contains('zebra-manual');
+           toggle.textContent=open?'MASQUER LA SAISIE MANUELLE':'SAISIE MANUELLE';
+           if(open){input.style.display='block';add.style.display='block';input.focus();}
+           else{input.blur();setTimeout(focusCapture,30);}
+         };
+         controls.appendChild(toggle);
+         add.insertAdjacentElement('afterend',controls);
+       }
+     }
+   }
+   setTimeout(focusCapture,60);
+ }
+
+ const _renderLoad=renderLoad;
+ renderLoad=function(){const x=_renderLoad.apply(this,arguments);decorateLoadUi();return x};
+ const _renderActiveLoad=renderActiveLoad;
+ renderActiveLoad=function(){const x=_renderActiveLoad.apply(this,arguments);decorateLoadUi();return x};
+ const _go=go;
+ go=function(id){const x=_go.apply(this,arguments);setTimeout(focusCapture,80);return x};
+
+ document.addEventListener('pointerup',e=>{
+   if(!loadingScanContext())return;
+   if(e.target.closest?.('input,textarea,select'))return;
+   setTimeout(focusCapture,120);
+ });
+ window.addEventListener('focus',()=>setTimeout(focusCapture,100));
+ setTimeout(decorateLoadUi,100);
+})();
