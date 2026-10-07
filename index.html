@@ -98,7 +98,7 @@ h1{font-size:25px;margin:0 0 5px}h2{font-size:21px;margin:0 0 8px}h3{font-size:1
 <div class="card">
 <h3>Régulariser un bac revenu à l’entrepôt</h3>
 <div class="small">À utiliser uniquement si le bac est physiquement revenu à LSN PHARMA mais que sa restitution n’a pas été scannée.</div>
-<input id="releaseBinCode" class="input" placeholder="Ex. BAC-000007" autocomplete="off">
+<input id="releaseBinCode" name="lsn_bin_release_code" class="input" type="search" placeholder="Ex. BAC-000007" autocomplete="new-password" autocapitalize="characters" spellcheck="false" data-lpignore="true">
 <button class="btn secondary" onclick="releaseBinToWarehouse()">RESTITUÉ À L’ENTREPÔT</button>
 <div id="releaseBinNotice"></div>
 </div>
