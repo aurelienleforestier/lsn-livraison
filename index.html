@@ -496,7 +496,13 @@ function renderAdmin(){
  detail.innerHTML=`<button class="mini" onclick="closeAdminRoute()">← RETOUR AUX TOURNÉES</button><div class="card"><div class="admin-detail-title"><div><h3>${target.name}</h3><div class="small">${target.pharmacies.length} pharmacie(s)</div></div><span class="status ${target.published?'ok':'warn'}">${target.published?'Publiée':'Brouillon'}</span></div><button class="btn ${target.published?'secondary':'green'}" onclick="${target.published?`unpublish('${target.id}')`:`publish('${target.id}')`}">${target.published?'DÉPUBLIER LA TOURNÉE':'PUBLIER LA TOURNÉE'}</button></div><div class="notice warn">⚠️ Prototype public : ne pas saisir de vrais codes d’alarme ou d’accès tant qu’une authentification et un stockage sécurisé ne sont pas en place.</div><div class="card"><h3>Pharmacies affectées</h3>${assigned}</div><div class="card"><h3>Ajouter / retirer des pharmacies</h3>${pool}</div><button class="btn green" onclick="saveAdminRouteAndClose()">✓ ENREGISTRER</button>`;
 }
 function renderPark(){
- const activeLoaded=new Set(),rid=activeWorkflowRouteId();if(rid){const loads=state.loadByRoute?.[rid]||{},delivered=state.deliveredByRoute?.[rid]||{};Object.entries(loads).forEach(([pid,d])=>{if(!d?.noOrder&&!delivered?.[pid]?.done)(d?.bins||[]).forEach(b=>activeLoaded.add(b))})}
+ const activeLoaded=new Set();
+ for(const [rid,loads] of Object.entries(state.loadByRoute||{})){
+   const delivered=state.deliveredByRoute?.[rid]||{};
+   Object.entries(loads||{}).forEach(([pid,d])=>{
+     if(!d?.noOrder&&!delivered?.[pid]?.done)(d?.bins||[]).forEach(b=>activeLoaded.add(b));
+   });
+ }
  const client=Object.values(state.bins.client).reduce((a,x)=>a+(Array.isArray(x)?x.length:0),0);n('availableCount').textContent=state.bins.available.length;n('loadedCount').textContent=activeLoaded.size;n('clientCount').textContent=client;n('parkDetails').innerHTML=Object.entries(state.bins.client).filter(([,b])=>Array.isArray(b)&&b.length).map(([pid,b])=>`<div class="card"><strong>${ph(pid)?.name||pid}</strong><div class="meta">${b.length} bac(s) : ${b.join(', ')||'aucun'}</div></div>`).join('')||'<div class="small">Aucun bac actuellement enregistré chez un client.</div>';
 }
 function releaseBinToWarehouse(){
