@@ -187,3 +187,85 @@ startDeliveryTour=function(){const r=routeObj();if(r){const m=state.tourRunMeta[
  window.addEventListener('focus',()=>setTimeout(focusCapture,100));
  setTimeout(decorateLoadUi,100);
 })();
+
+
+/* Identité visuelle LSN PHARMA + ergonomie des profils + sécurité d'inactivité. */
+(function installLsnBrandAndSecurity(){
+ const style=document.createElement('style');
+ style.textContent=`
+  :root{--blue:#2d357f!important;--text:#202750!important;--green:#008875!important;--line:#dfe2e9!important;--bg:#f7f8f4!important;--pink:#df0084!important}
+  body{background:#f7f8f4!important;color:#202750!important}
+  .app{background:#fff!important}
+  header{border-bottom-color:#dfe2e9!important}
+  header .logo{display:flex;align-items:center;min-width:120px}
+  header .logo img{display:block;width:122px;height:auto;max-height:62px;object-fit:contain}
+  #userRoleBadge{display:none!important}
+  #userNameBadge{background:#eef0fb!important;color:#2d357f!important;font-weight:800!important}
+  nav button.active,.btn.dark{background:#2d357f!important;color:#fff!important}
+  .btn.primary{background:#2d357f!important;color:#fff!important}
+  .btn.green{background:#008875!important;color:#fff!important}
+  .status.ok,.notice.ok{background:#e2f4ef!important;color:#006b5d!important}
+  .scanbox,#activeLoadPharmacy .zebra-bin-panel{border-color:#98a4d8!important;background:#f3f5ff!important;color:#202750!important}
+  a{color:#008875}
+  body.operator-mode nav{justify-content:center!important;overflow-x:hidden!important}
+  body.operator-mode nav button{flex:0 0 auto}
+  @media(max-width:520px){
+    header{padding:10px 12px!important;gap:10px}
+    header .logo img{width:102px}
+    #userNameBadge{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    body.operator-mode nav{gap:7px!important;padding:9px 6px!important}
+    body.operator-mode nav button{font-size:12px!important;padding:8px 9px!important}
+  }
+ `;
+ document.head.appendChild(style);
+
+ function decorateBrand(){
+   const logo=document.querySelector('header .logo');
+   if(logo && !logo.querySelector('img')){
+     logo.innerHTML='<img src="/lsn-logo.svg" alt="LSN PHARMA">';
+   }
+   const role=n('userRoleBadge');if(role)role.style.display='none';
+   const name=n('userNameBadge');if(name)name.textContent=state?.currentUser?.name||state?.currentUser?.email||'Utilisateur';
+   document.body.classList.toggle('operator-mode',!isPharmacist());
+ }
+ const _renderAccessBrand=renderAccess;
+ renderAccess=function(){const x=_renderAccessBrand.apply(this,arguments);decorateBrand();return x};
+
+ const _renderProfilesBrand=renderProfiles;
+ renderProfiles=async function(){
+   const x=await _renderProfilesBrand.apply(this,arguments);
+   const email=n('profileEmail');
+   if(email){
+     email.required=false;
+     email.placeholder='Facultatif pour les opérateurs';
+     const label=email.previousElementSibling;
+     if(label&&label.classList.contains('label'))label.textContent='E-mail (facultatif)';
+   }
+   const name=n('profileName');
+   if(name){
+     const label=name.previousElementSibling;
+     if(label&&label.classList.contains('label'))label.textContent='Nom utilisateur';
+     name.placeholder='Ex. Emmanuelle';
+   }
+   return x;
+ };
+
+ const IDLE_MS=15*60*1000,IDLE_KEY='lsn-last-activity';
+ let lastActivity=Number(localStorage.getItem(IDLE_KEY)||Date.now());
+ let idleLogoutStarted=false;
+ function markActivity(){
+   lastActivity=Date.now();
+   try{localStorage.setItem(IDLE_KEY,String(lastActivity))}catch(e){}
+ }
+ async function checkIdle(){
+   if(idleLogoutStarted||!serverReady)return;
+   if(Date.now()-lastActivity<IDLE_MS)return;
+   idleLogoutStarted=true;
+   try{await logoutApp()}catch(e){location.replace('/login')}
+ }
+ ['pointerdown','keydown','touchstart','input'].forEach(evt=>document.addEventListener(evt,markActivity,{passive:true,capture:true}));
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkIdle()});
+ window.addEventListener('focus',checkIdle);
+ setInterval(checkIdle,30000);
+ setTimeout(()=>{decorateBrand();checkIdle()},150);
+})();
