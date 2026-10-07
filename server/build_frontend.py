@@ -53,6 +53,35 @@ def main():
     result = "".join(out).encode("utf-8")
     if hashlib.sha256(result).hexdigest() != TARGET_SHA256:
         raise RuntimeError("Le résultat ne correspond pas à la version vérifiée")
+
+    # Correctifs spécifiques à la version serveur de test.
+    html = result.decode("utf-8")
+
+    old_release = '<input id="releaseBinCode" class="input" placeholder="Ex. BAC-000007" autocomplete="off">'
+    new_release = '<input id="releaseBinCode" name="lsn_bin_release_code" class="input" type="search" placeholder="Ex. BAC-000007" autocomplete="new-password" autocapitalize="characters" spellcheck="false" data-lpignore="true">'
+    if html.count(old_release) != 1:
+        raise RuntimeError("Champ de restitution introuvable ou ambigu")
+    html = html.replace(old_release, new_release)
+
+    old_park = '''function renderPark(){
+ const activeLoaded=new Set(),rid=activeWorkflowRouteId();if(rid){const loads=state.loadByRoute?.[rid]||{},delivered=state.deliveredByRoute?.[rid]||{};Object.entries(loads).forEach(([pid,d])=>{if(!d?.noOrder&&!delivered?.[pid]?.done)(d?.bins||[]).forEach(b=>activeLoaded.add(b))})}
+ const client=Object.values(state.bins.client).reduce((a,x)=>a+(Array.isArray(x)?x.length:0),0);n('availableCount').textContent=state.bins.available.length;n('loadedCount').textContent=activeLoaded.size;n('clientCount').textContent=client;n('parkDetails').innerHTML=Object.entries(state.bins.client).filter(([,b])=>Array.isArray(b)&&b.length).map(([pid,b])=>`<div class="card"><strong>${ph(pid)?.name||pid}</strong><div class="meta">${b.length} bac(s) : ${b.join(', ')||'aucun'}</div></div>`).join('')||'<div class="small">Aucun bac actuellement enregistré chez un client.</div>';
+}'''
+    new_park = '''function renderPark(){
+ const activeLoaded=new Set();
+ for(const [rid,loads] of Object.entries(state.loadByRoute||{})){
+   const delivered=state.deliveredByRoute?.[rid]||{};
+   Object.entries(loads||{}).forEach(([pid,d])=>{
+     if(!d?.noOrder&&!delivered?.[pid]?.done)(d?.bins||[]).forEach(b=>activeLoaded.add(b));
+   });
+ }
+ const client=Object.values(state.bins.client).reduce((a,x)=>a+(Array.isArray(x)?x.length:0),0);n('availableCount').textContent=state.bins.available.length;n('loadedCount').textContent=activeLoaded.size;n('clientCount').textContent=client;n('parkDetails').innerHTML=Object.entries(state.bins.client).filter(([,b])=>Array.isArray(b)&&b.length).map(([pid,b])=>`<div class="card"><strong>${ph(pid)?.name||pid}</strong><div class="meta">${b.length} bac(s) : ${b.join(', ')||'aucun'}</div></div>`).join('')||'<div class="small">Aucun bac actuellement enregistré chez un client.</div>';
+}'''
+    if html.count(old_park) != 1:
+        raise RuntimeError("Fonction renderPark introuvable ou ambiguë")
+    html = html.replace(old_park, new_park)
+    result = html.encode("utf-8")
+
     target = ROOT / "server/static/app.html"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(result)
