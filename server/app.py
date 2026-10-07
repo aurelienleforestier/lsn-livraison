@@ -563,7 +563,8 @@ def put_state(payload: StatePayload, auth=Depends(require_csrf), db: Session = D
     if changed.rowcount != 1:
         db.rollback()
         raise HTTPException(409, "Conflit de version ; aucune modification enregistrée")
-    audit(db, u.id, "state_saved", {"version":new_version,"movements":moves,"beforeSha256":hashlib.sha256(json.dumps(current,sort_keys=True).encode()).hexdigest(),"afterSha256":hashlib.sha256(json.dumps(incoming,sort_keys=True).encode()).hexdigest()})
+    operations = [{"field":key,"routeId":rid,"before":current.get(key,{}).get(rid),"after":incoming.get(key,{}).get(rid)} for key in ROUTE_FIELDS for rid in set(current.get(key,{})) | set(incoming.get(key,{})) if current.get(key,{}).get(rid) != incoming.get(key,{}).get(rid)]
+    audit(db, u.id, "state_saved", {"version":new_version,"operations":operations,"archivedRuns":incoming.get("tourHistory",[])[len(current.get("tourHistory",[])):],"movements":moves,"beforeSha256":hashlib.sha256(json.dumps(current,sort_keys=True).encode()).hexdigest(),"afterSha256":hashlib.sha256(json.dumps(incoming,sort_keys=True).encode()).hexdigest()})
     db.commit()
     return {"ok":True, "version":new_version, "state":visible_state(incoming, u)}
 
