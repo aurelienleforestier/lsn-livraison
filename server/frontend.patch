@@ -1,0 +1,122 @@
+--- a/server/static/app.html
++++ b/server/static/app.html
+@@ -7,2 +7,2 @@
+-<link rel="manifest" href="manifest.webmanifest">
+-<title>LSN PHARMA Livraison V5.3</title>
++<link rel="manifest" href="/manifest.webmanifest">
++<title>LSN PHARMA Interne V6.0</title>
+@@ -48 +48 @@
+-<header><div class="logo">LSN <span>PHARMA</span></div><div style="display:flex;gap:6px;align-items:center"><div class="badge" id="userRoleBadge">Profil</div><div class="badge">V5.3 · Verrouillage intelligent des tournées</div></div></header>
++<div style="padding:7px 16px;background:#fff7ed;font-size:12px">VERSION DE TEST — Données fictives uniquement</div><header><div class="logo">LSN <span>PHARMA</span></div><div style="display:flex;gap:6px;align-items:center"><div class="badge" id="userNameBadge">Utilisateur</div><div class="badge" id="userRoleBadge">Profil</div><button class="mini" onclick="logoutApp()">Déconnexion</button></div></header>
+@@ -56 +56,2 @@
+-<button data-go="admin" onclick="go('admin')">Back-office</button>
++<button id="profilesNav" data-go="profiles" onclick="go('profiles')">Profils</button>
++<button id="adminNav" data-go="admin" onclick="go('admin')">Back-office</button>
+@@ -123,0 +125,17 @@
++</div>
++</section>
++
++<section id="profiles" class="step">
++<h2>Profils</h2>
++<div id="profilesDenied" class="notice err" style="display:none">Accès réservé au Pharmacien / Admin.</div>
++<div id="profilesContent">
++<div class="card">
++<h3>Créer un profil</h3>
++<label class="label">Nom</label><input id="profileName" class="input" placeholder="Ex. Julien Martin">
++<label class="label">E-mail / identifiant</label><input id="profileEmail" class="input" type="email" placeholder="julien@lsnpharma.fr">
++<label class="label">Rôle</label><select id="profileRole" class="input"><option value="operator">Livreur / Opérateur</option><option value="admin">Pharmacien / Admin</option></select>
++<label class="label">Mot de passe temporaire</label><input id="profilePassword" class="input" type="password" placeholder="10 caractères minimum">
++<button class="btn dark" onclick="createProfile()">CRÉER LE PROFIL</button>
++<div id="profilesNotice"></div>
++</div>
++<div class="card"><h3>Comptes LSN PHARMA</h3><div id="profilesList"></div></div>
+@@ -172,2 +190,2 @@
+- appVersion:53,
+- currentUser:{id:'PHARMA-DEMO',name:'Pharmacien démo',role:'pharmacist'},
++ appVersion:60,
++ currentUser:{id:'',name:'',email:'',role:'operator'},
+@@ -258 +276 @@
+-let state=loadState();
++let state=freshState();
+@@ -260,2 +278,7 @@
+-function save(){try{localStorage.setItem('lsn-v53',JSON.stringify(state))}catch(e){}}
+-function isPharmacist(){return state.currentUser?.role==='pharmacist'}
++let csrfToken='',serverReady=false,serverSaveTimer=null,profilesCache=[];
++function uiStorageKey(){return 'lsn-server-ui-'+(state.currentUser?.id||'anon')}
++function saveUi(){try{localStorage.setItem(uiStorageKey(),JSON.stringify({selectedRoute:state.selectedRoute||null,adminSelectedRoute:state.adminSelectedRoute||null,currentScreen:state.currentScreen||'home'}))}catch(e){}}
++function serverStateSnapshot(){const x=JSON.parse(JSON.stringify(state));delete x.currentUser;delete x.selectedRoute;delete x.adminSelectedRoute;delete x.currentScreen;return x}
++async function apiJson(url,opts={}){const o={credentials:'same-origin',...opts,headers:{'Content-Type':'application/json',...(opts.headers||{})}};if(o.method&&o.method!=='GET'&&csrfToken)o.headers['X-CSRF-Token']=csrfToken;const r=await fetch(url,o);if(r.status===401){location.href='/login';throw new Error('Session expirée')}let data={};try{data=await r.json()}catch(e){}if(!r.ok)throw new Error(data.detail||data.message||('Erreur '+r.status));return data}
++function save(){saveUi();if(!serverReady)return;clearTimeout(serverSaveTimer);serverSaveTimer=setTimeout(async()=>{try{await apiJson('/api/state',{method:'PUT',body:JSON.stringify({state:serverStateSnapshot()})})}catch(e){console.error(e);showBootError(e)}},120)}
++function isPharmacist(){return state.currentUser?.role==='admin'}
+@@ -272,2 +295,2 @@
+-function applyRoleFromUrl(){try{const role=new URLSearchParams(location.search).get('role');if(role==='operator'||role==='pharmacist')state.currentUser={...(state.currentUser||{}),role,name:role==='pharmacist'?'Pharmacien démo':'Opérateur démo'};}catch(e){}}
+-function renderAccess(){const k=n('kpiNav'),h=n('historyNav');if(k)k.style.display=isPharmacist()?'':'none';if(h)h.style.display=isPharmacist()?'':'none';const b=n('userRoleBadge');if(b)b.textContent=isPharmacist()?'Pharmacien':'Opérateur';if(!isPharmacist()&&['kpi','history'].includes(state.currentScreen))state.currentScreen='home'}
++function applyRoleFromUrl(){}
++function renderAccess(){const ids=['kpiNav','historyNav','profilesNav','adminNav'];ids.forEach(id=>{const el=n(id);if(el)el.style.display=isPharmacist()?'':'none'});const b=n('userRoleBadge');if(b)b.textContent=isPharmacist()?'Pharmacien / Admin':'Livreur / Opérateur';const ub=n('userNameBadge');if(ub)ub.textContent=state.currentUser?.name||state.currentUser?.email||'Utilisateur';if(!isPharmacist()&&['kpi','history','profiles','admin'].includes(state.currentScreen))state.currentScreen='home'}
+@@ -275 +298 @@
+- if(['kpi','history'].includes(id)&&!isPharmacist()){alert('Accès réservé au profil Pharmacien.');id='home'}
++ if(['kpi','history','profiles','admin'].includes(id)&&!isPharmacist()){alert('Accès réservé au Pharmacien / Admin.');id='home'}
+@@ -479,0 +503,12 @@
++function deleteRoute(rid){
++ const r=state.routes.find(x=>x.id===rid);if(!r)return;
++ const loads=state.loadByRoute?.[rid]||{},delivered=state.deliveredByRoute?.[rid]||{};
++ const hasLoad=Object.values(loads).some(d=>{d=normalizeLoad(d);return d.bins.length>0||d.parcels>0||d.done||d.noOrder});
++ const hasDelivery=!!state.deliveryStarted?.[rid]||Object.values(delivered).some(d=>{d=normalizeDelivered(d);return d.done||d.bins.length>0||d.parcels>0||d.returns.length>0});
++ if(hasLoad||hasDelivery){alert('Impossible de supprimer cette tournée : un chargement ou une livraison est en cours. Clôture d’abord la tournée.');return}
++ if(!confirm('Supprimer définitivement '+r.name+' ?\n\nL’historique déjà archivé, s’il existe, sera conservé.'))return;
++ state.routes=state.routes.filter(x=>x.id!==rid);
++ delete state.loadByRoute[rid];delete state.deliveredByRoute[rid];delete state.tourRunMeta[rid];delete state.deliveryStarted[rid];delete state.deliveryCursorByRoute[rid];
++ if(state.selectedRoute===rid)state.selectedRoute=null;if(state.adminSelectedRoute===rid)state.adminSelectedRoute=null;
++ currentLoadPharmacy=null;currentDeliveryPharmacy=null;loadSubView='pending';save();render();
++}
+@@ -496 +531 @@
+- detail.innerHTML=`<button class="mini" onclick="closeAdminRoute()">← RETOUR AUX TOURNÉES</button><div class="card"><div class="admin-detail-title"><div><h3>${target.name}</h3><div class="small">${target.pharmacies.length} pharmacie(s)</div></div><span class="status ${target.published?'ok':'warn'}">${target.published?'Publiée':'Brouillon'}</span></div><button class="btn ${target.published?'secondary':'green'}" onclick="${target.published?`unpublish('${target.id}')`:`publish('${target.id}')`}">${target.published?'DÉPUBLIER LA TOURNÉE':'PUBLIER LA TOURNÉE'}</button></div><div class="notice warn">⚠️ Prototype public : ne pas saisir de vrais codes d’alarme ou d’accès tant qu’une authentification et un stockage sécurisé ne sont pas en place.</div><div class="card"><h3>Pharmacies affectées</h3>${assigned}</div><div class="card"><h3>Ajouter / retirer des pharmacies</h3>${pool}</div><button class="btn green" onclick="saveAdminRouteAndClose()">✓ ENREGISTRER</button>`;
++ detail.innerHTML=`<button class="mini" onclick="closeAdminRoute()">← RETOUR AUX TOURNÉES</button><div class="card"><div class="admin-detail-title"><div><h3>${target.name}</h3><div class="small">${target.pharmacies.length} pharmacie(s)</div></div><span class="status ${target.published?'ok':'warn'}">${target.published?'Publiée':'Brouillon'}</span></div><button class="btn ${target.published?'secondary':'green'}" onclick="${target.published?`unpublish('${target.id}')`:`publish('${target.id}')`}">${target.published?'DÉPUBLIER LA TOURNÉE':'PUBLIER LA TOURNÉE'}</button></div><div class="card"><h3>Pharmacies affectées</h3>${assigned}</div><div class="card"><h3>Ajouter / retirer des pharmacies</h3>${pool}</div><button class="btn green" onclick="saveAdminRouteAndClose()">✓ ENREGISTRER</button><button class="btn" style="background:#fff;color:var(--red);border:1px solid #fecaca;margin-top:8px" onclick="deleteRoute('${target.id}')">SUPPRIMER LA TOURNÉE</button>`;
+@@ -579 +614,38 @@
+-function render(){renderAccess();renderDriverRoutes();renderLoad();renderDelivery();renderAdmin();renderPark();renderHistory();renderKpi()}
++function render(){renderAccess();renderDriverRoutes();renderLoad();renderDelivery();renderAdmin();renderPark();renderHistory();renderKpi();renderProfiles()}
++async function renderProfiles(){
++ const denied=n('profilesDenied'),content=n('profilesContent'),list=n('profilesList');if(!denied||!content||!list)return;if(state.currentScreen!=='profiles')return;
++ if(!isPharmacist()){denied.style.display='block';content.style.display='none';return}
++ denied.style.display='none';content.style.display='block';
++ try{
++   const data=await apiJson('/api/users',{method:'GET'});profilesCache=data.users||[];
++   list.innerHTML=profilesCache.map(u=>`<div class="ph"><div class="row"><div><strong>${u.name}</strong><div class="small">${u.email}</div></div><span class="status ${u.active?'ok':'warn'}">${u.active?'Actif':'Désactivé'}</span></div><div class="small" style="margin-top:6px">${u.role==='admin'?'Pharmacien / Admin':'Livreur / Opérateur'}${u.lastLoginAt?' · dernière connexion '+new Date(u.lastLoginAt).toLocaleString('fr-FR'):''}</div><div class="scangrid" style="margin-top:7px"><button class="mini" onclick="toggleProfile('${u.id}',${!u.active})">${u.active?'DÉSACTIVER':'RÉACTIVER'}</button><button class="mini" onclick="resetProfilePassword('${u.id}')">MOT DE PASSE TEMPORAIRE</button></div></div>`).join('')||'<div class="small">Aucun profil.</div>';
++ }catch(e){list.innerHTML='<div class="notice err">'+e.message+'</div>'}
++}
++async function createProfile(){
++ try{
++  const body={name:n('profileName').value.trim(),email:n('profileEmail').value.trim(),role:n('profileRole').value,temporary_password:n('profilePassword').value};
++  await apiJson('/api/users',{method:'POST',body:JSON.stringify(body)});n('profileName').value='';n('profileEmail').value='';n('profilePassword').value='';notice('profilesNotice','✅ Profil créé. Le mot de passe temporaire devra être changé à la première connexion.','ok');await renderProfiles();
++ }catch(e){notice('profilesNotice','❌ '+e.message,'err')}
++}
++async function toggleProfile(id,active){try{await apiJson('/api/users/'+id,{method:'PATCH',body:JSON.stringify({active})});await renderProfiles()}catch(e){alert(e.message)}}
++async function resetProfilePassword(id){const pw=prompt('Nouveau mot de passe temporaire (10 caractères minimum) :');if(!pw)return;try{await apiJson('/api/users/'+id+'/temporary-password',{method:'POST',body:JSON.stringify({password:pw})});alert('Mot de passe temporaire enregistré. L’utilisateur devra le changer à sa prochaine connexion.');await renderProfiles()}catch(e){alert(e.message)}}
++async function logoutApp(){try{await apiJson('/api/auth/logout',{method:'POST',body:'{}'})}catch(e){}location.href='/login'}
++function normalizeServerState(saved){
++ const f=freshState(),x=saved&&typeof saved==='object'?saved:{};
++ const out={...f,...x,currentUser:f.currentUser,selectedRoute:null,adminSelectedRoute:null,currentScreen:'home'};
++ out.routes=Array.isArray(x.routes)?x.routes.filter(r=>r&&typeof r.id==='string').map(normalizeRoute):f.routes;
++ out.pharmacyMeta=x.pharmacyMeta&&typeof x.pharmacyMeta==='object'?x.pharmacyMeta:{};
++ out.loadByRoute=x.loadByRoute&&typeof x.loadByRoute==='object'?x.loadByRoute:{};Object.keys(out.loadByRoute).forEach(rid=>{const src=out.loadByRoute[rid]||{},dst={};Object.keys(src).forEach(pid=>dst[pid]=normalizeLoad(src[pid]));out.loadByRoute[rid]=dst});
++ out.deliveredByRoute=x.deliveredByRoute&&typeof x.deliveredByRoute==='object'?x.deliveredByRoute:{};Object.keys(out.deliveredByRoute).forEach(rid=>{const src=out.deliveredByRoute[rid]||{},dst={};Object.keys(src).forEach(pid=>dst[pid]=normalizeDelivered(src[pid]));out.deliveredByRoute[rid]=dst});
++ out.deliveryStarted=x.deliveryStarted&&typeof x.deliveryStarted==='object'?x.deliveryStarted:{};out.deliveryCursorByRoute=x.deliveryCursorByRoute&&typeof x.deliveryCursorByRoute==='object'?x.deliveryCursorByRoute:{};out.tourRunMeta=x.tourRunMeta&&typeof x.tourRunMeta==='object'?x.tourRunMeta:{};out.tourHistory=Array.isArray(x.tourHistory)?x.tourHistory:[];out.binAdjustments=Array.isArray(x.binAdjustments)?x.binAdjustments:[];out.bins=x.bins&&typeof x.bins==='object'?x.bins:f.bins;out.bins.available=Array.isArray(out.bins.available)?out.bins.available:[];out.bins.client=out.bins.client&&typeof out.bins.client==='object'?out.bins.client:{};return out
++}
++async function bootServerApp(){
++ try{
++  const me=await apiJson('/api/me',{method:'GET'});csrfToken=me.csrf||'';if(me.user?.mustChangePassword){location.href='/change-password';return}
++  const payload=await apiJson('/api/state',{method:'GET'});state=normalizeServerState(payload.state);state.currentUser=me.user;
++  try{const ui=JSON.parse(localStorage.getItem(uiStorageKey())||'{}');state.selectedRoute=ui.selectedRoute&&state.routes.some(r=>r.id===ui.selectedRoute)?ui.selectedRoute:null;state.adminSelectedRoute=ui.adminSelectedRoute&&state.routes.some(r=>r.id===ui.adminSelectedRoute)?ui.adminSelectedRoute:null;state.currentScreen=['home','load','delivery','park','history','kpi','profiles','admin'].includes(ui.currentScreen)?ui.currentScreen:'home'}catch(e){}
++  const owned=state.routes.find(r=>state.tourRunMeta?.[r.id]?.operator?.id===String(me.user.id)&&(state.deliveryStarted?.[r.id]||routeHasPhysicalLoad(r.id)));
++  if(owned){state.selectedRoute=owned.id;if(state.deliveryStarted?.[owned.id])state.currentScreen='delivery'}
++  serverReady=true;renderAccess();go(state.currentScreen||'home')
++ }catch(e){showBootError(e)}
++}
+@@ -650,3 +722 @@
+-if('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+-applyRoleFromUrl();renderAccess();save();
+-try{go(state.currentScreen||'home')}catch(e){showBootError(e)}
++if('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+@@ -653,0 +724,2 @@
++<script src="/sync.js"></script>
++<script>bootServerApp()</script>
