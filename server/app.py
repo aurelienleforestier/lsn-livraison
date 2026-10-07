@@ -215,18 +215,18 @@ MAINTENANCE_HTML = """<!doctype html><html lang=fr><meta charset=utf-8><meta nam
 def robots(): return Response("User-agent: *\nDisallow: /\n", media_type="text/plain")
 
 class LoginIn(BaseModel):
-    email: str = Field(min_length=3, max_length=254)
+    email: str = Field(min_length=2, max_length=254)  # nom utilisateur ou e-mail
     password: str = Field(min_length=1, max_length=200)
 class PasswordIn(BaseModel):
     password: str = Field(min_length=10, max_length=200)
 class ForgotIn(BaseModel):
-    email: str
+    email: str = Field(min_length=2, max_length=254)  # nom utilisateur ou e-mail
 class ResetIn(BaseModel):
     token: str
     password: str
 class UserCreate(BaseModel):
     name: str = Field(min_length=2, max_length=160)
-    email: str = Field(min_length=3, max_length=254)
+    email: Optional[str] = Field(default=None, max_length=254)
     role: str = "operator"
     temporary_password: str = Field(min_length=10, max_length=200)
 class UserPatch(BaseModel):
@@ -237,8 +237,38 @@ class StatePayload(BaseModel):
     state: dict[str, Any]
     version: int = Field(ge=1)
 
+INTERNAL_EMAIL_SUFFIX = "@users.lsn.invalid"
+
+def public_email(value: str) -> str:
+    value = (value or "").strip()
+    return "" if value.lower().endswith(INTERNAL_EMAIL_SUFFIX) else value
+
+def internal_user_email() -> str:
+    return "internal-" + secrets.token_hex(8) + INTERNAL_EMAIL_SUFFIX
+
+def find_user_by_identifier(db: Session, identifier: str) -> Optional[User]:
+    key = (identifier or "").strip().casefold()
+    if not key:
+        return None
+    users = db.scalars(select(User)).all()
+    for user in users:
+        if (user.email or "").strip().casefold() == key or (user.name or "").strip().casefold() == key:
+            return user
+    return None
+
+def pharmacist_reset_email(db: Session) -> str:
+    configured = os.getenv("LSN_ADMIN_EMAIL", "").strip().lower()
+    if configured:
+        return configured
+    admins = db.scalars(select(User).where(User.role == "admin", User.active == True).order_by(User.id.asc())).all()
+    for admin in admins:
+        email = public_email(admin.email)
+        if email:
+            return email
+    return ""
+
 def serialize_user(u: User):
-    return {"id": str(u.id), "email": u.email, "name": u.name, "role": u.role, "active": u.active, "mustChangePassword": u.must_change_password,
+    return {"id": str(u.id), "email": public_email(u.email), "name": u.name, "role": u.role, "active": u.active, "mustChangePassword": u.must_change_password,
             "createdAt": u.created_at.isoformat() if u.created_at else None,
             "lastLoginAt": u.last_login_at.isoformat() if u.last_login_at else None}
 
@@ -316,11 +346,11 @@ def sw(): return FileResponse(STATIC_DIR / "sw.js", media_type="application/java
 
 @app.post("/api/auth/login")
 def login(payload: LoginIn, response: Response, db: Session = Depends(db_session)):
-    email = payload.email.strip().lower()
-    u = db.scalar(select(User).where(User.email == email))
+    identifier = payload.email.strip()
+    u = find_user_by_identifier(db, identifier)
     if not u or not u.active or not verify_password(payload.password, u.password_hash):
-        audit(db, u.id if u else None, "login_failed", {"email": email}); db.commit()
-        raise HTTPException(401, "Identifiant ou mot de passe incorrect")
+        audit(db, u.id if u else None, "login_failed", {"identifier": identifier}); db.commit()
+        raise HTTPException(401, "Utilisateur ou mot de passe incorrect")
     raw = secrets.token_urlsafe(32)
     csrf = secrets.token_urlsafe(24)
     db.add(UserSession(token_hash=digest_token(raw), csrf_token=csrf, user_id=u.id, expires_at=utcnow()+timedelta(hours=SESSION_HOURS)))
@@ -374,19 +404,23 @@ def send_reset_email(to_email: str, reset_url: str) -> bool:
 
 @app.post("/api/auth/forgot")
 def forgot(payload: ForgotIn, db: Session = Depends(db_session)):
-    if not os.getenv("SMTP_HOST"):
-        return {"ok": True, "message": "Pour cette version de test, demande au Pharmacien/Admin de réinitialiser ton mot de passe dans Profils."}
-    email = payload.email.strip().lower()
-    u = db.scalar(select(User).where(User.email == email, User.active == True))
-    if u:
+    identifier = payload.email.strip()
+    u = find_user_by_identifier(db, identifier)
+    if u and u.active:
         token = secrets.token_urlsafe(32)
         db.add(PasswordReset(token_hash=digest_token(token), user_id=u.id, expires_at=utcnow()+timedelta(minutes=RESET_MINUTES)))
-        audit(db, u.id, "password_reset_requested")
+        audit(db, u.id, "password_reset_requested", {"identifier": identifier})
         db.commit()
         reset_url = f"{PUBLIC_BASE_URL}/reset?token={token}"
-        try: send_reset_email(u.email, reset_url)
-        except Exception as exc: print("[LSN PHARMA] Erreur SMTP:", exc)
-    return {"ok": True, "message": "Si ce compte existe, un lien de réinitialisation a été envoyé."}
+        recipient = public_email(u.email) if u.role == "admin" else pharmacist_reset_email(db)
+        if os.getenv("SMTP_HOST") and recipient:
+            try:
+                send_reset_email(recipient, reset_url)
+            except Exception as exc:
+                print("[LSN PHARMA] Erreur SMTP:", exc)
+        elif not os.getenv("SMTP_HOST"):
+            print(f"[LSN PHARMA] Demande de réinitialisation pour {u.name}; destinataire Pharmacien/Admin: {recipient or 'non configuré'}")
+    return {"ok": True, "message": "Demande enregistrée. Le Pharmacien/Admin peut réinitialiser le mot de passe."}
 
 @app.post("/api/auth/reset")
 def reset_password(payload: ResetIn, db: Session = Depends(db_session)):
@@ -525,15 +559,22 @@ def list_users(auth=Depends(admin_read_auth), db: Session = Depends(db_session))
 @app.post("/api/users")
 def create_user(payload: UserCreate, auth=Depends(admin_auth), db: Session = Depends(db_session)):
     admin, _ = auth
-    if any(c in payload.name for c in "<>"): raise HTTPException(400, "Nom invalide")
+    name = payload.name.strip()
+    if any(ch in name for ch in "<>"): raise HTTPException(400, "Nom invalide")
+    for existing in db.scalars(select(User)).all():
+        if (existing.name or "").strip().casefold() == name.casefold():
+            raise HTTPException(409, "Ce nom utilisateur existe déjà")
     role = payload.role if payload.role in {"admin","operator"} else "operator"
-    email = payload.email.strip().lower()
-    if db.scalar(select(User).where(User.email == email)):
-        raise HTTPException(409, "Cette adresse e-mail existe déjà")
+    email = (payload.email or "").strip().lower()
+    if email:
+        if db.scalar(select(User).where(User.email == email)):
+            raise HTTPException(409, "Cette adresse e-mail existe déjà")
+    else:
+        email = internal_user_email()
     try: ph = hash_password(payload.temporary_password)
     except ValueError as e: raise HTTPException(400, str(e))
-    u = User(name=payload.name.strip(), email=email, role=role, password_hash=ph, active=True, must_change_password=True)
-    db.add(u); db.flush(); audit(db, admin.id, "user_created", {"userId":u.id,"email":u.email,"role":role}); db.commit(); db.refresh(u)
+    u = User(name=name, email=email, role=role, password_hash=ph, active=True, must_change_password=True)
+    db.add(u); db.flush(); audit(db, admin.id, "user_created", {"userId":u.id,"name":u.name,"role":role}); db.commit(); db.refresh(u)
     return {"user": serialize_user(u)}
 
 @app.patch("/api/users/{user_id}")
@@ -542,8 +583,12 @@ def patch_user(user_id: int, payload: UserPatch, auth=Depends(admin_auth), db: S
     u = db.get(User, user_id)
     if not u: raise HTTPException(404, "Profil introuvable")
     if payload.name is not None:
-        if any(c in payload.name for c in "<>"): raise HTTPException(400, "Nom invalide")
-        u.name = payload.name.strip()
+        new_name = payload.name.strip()
+        if any(ch in new_name for ch in "<>"): raise HTTPException(400, "Nom invalide")
+        for existing in db.scalars(select(User)).all():
+            if existing.id != u.id and (existing.name or "").strip().casefold() == new_name.casefold():
+                raise HTTPException(409, "Ce nom utilisateur existe déjà")
+        u.name = new_name
     if payload.role is not None:
         if payload.role not in {"admin","operator"}: raise HTTPException(400, "Rôle invalide")
         if u.id == admin.id and payload.role != "admin": raise HTTPException(400, "Vous ne pouvez pas retirer votre propre rôle administrateur")
