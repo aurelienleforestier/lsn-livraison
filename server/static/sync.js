@@ -252,16 +252,17 @@ startDeliveryTour=function(){const r=routeObj();if(r){const m=state.tourRunMeta[
 
  const IDLE_MS=15*60*1000,IDLE_KEY='lsn-last-activity';
  let lastActivity=Number(localStorage.getItem(IDLE_KEY)||Date.now());
- let idleLogoutStarted=false;
+ let idleLogoutStarted=false,lastHeartbeat=0;
  function markActivity(){
    lastActivity=Date.now();
+   if(serverReady&&lastActivity-lastHeartbeat>30000){lastHeartbeat=lastActivity;apiJson("/api/auth/activity",{method:"POST",body:"{}"}).catch(()=>statusSync("Activité non confirmée sur le serveur : vérifier la connexion.",true));}
    try{localStorage.setItem(IDLE_KEY,String(lastActivity))}catch(e){}
  }
  async function checkIdle(){
    if(idleLogoutStarted||!serverReady)return;
    if(Date.now()-lastActivity<IDLE_MS)return;
    idleLogoutStarted=true;
-   try{await logoutApp()}catch(e){location.replace('/login')}
+   try{await apiJson('/api/auth/logout',{method:'POST',body:'{}'})}finally{location.replace('/login')}
  }
  ['pointerdown','keydown','touchstart','input'].forEach(evt=>document.addEventListener(evt,markActivity,{passive:true,capture:true}));
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkIdle()});
@@ -269,3 +270,10 @@ startDeliveryTour=function(){const r=routeObj();if(r){const m=state.tourRunMeta[
  setInterval(checkIdle,30000);
  setTimeout(()=>{decorateBrand();checkIdle()},150);
 })();
+
+// An unsuccessful write freezes workflow controls until the authoritative reload.
+for(const eventName of ['click','keydown','submit'])document.addEventListener(eventName,event=>{
+ if(!syncBlocked)return;
+ if(event.target?.textContent==='RECHARGER LES DONNÉES')return;
+ event.preventDefault();event.stopImmediatePropagation();
+},true);

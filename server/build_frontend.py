@@ -4,6 +4,7 @@ No network requests and no modification to index.html or the main branch.
 from pathlib import Path
 import hashlib
 import re
+from frontend_controls import apply_controls
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE_BLOB = "3a6733e22a4dcdb318a04b9e98310b8dae599671"
@@ -80,6 +81,7 @@ def main():
     if html.count(old_park) != 1:
         raise RuntimeError("Fonction renderPark introuvable ou ambiguë")
     html = html.replace(old_park, new_park)
+    html = apply_controls(html)
     result = html.encode("utf-8")
 
     target = ROOT / "server/static/app.html"

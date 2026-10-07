@@ -10,7 +10,8 @@ from typing import Optional, Any
 from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse, HTMLResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, String, Boolean, DateTime, Integer, Text, ForeignKey, select
+from controls import locations, control_transition
+from sqlalchemy import create_engine, String, Boolean, DateTime, Integer, Text, ForeignKey, select, inspect, text, update
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session, sessionmaker
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -50,6 +51,7 @@ class UserSession(Base):
     __tablename__ = "sessions"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    last_activity_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     csrf_token: Mapped[str] = mapped_column(String(128))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
@@ -157,6 +159,10 @@ def create_initial_admin(db: Session):
 
 def init_database():
     Base.metadata.create_all(engine)
+    if "last_activity_at" not in {c["name"] for c in inspect(engine).get_columns("sessions")}:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE sessions ADD COLUMN last_activity_at TIMESTAMP"))
+            connection.execute(text("UPDATE sessions SET last_activity_at = created_at"))
     with SessionLocal() as db:
         st = db.get(AppState, 1)
         if not st:
@@ -277,7 +283,7 @@ def get_auth(request: Request, db: Session) -> tuple[User, UserSession]:
     if not raw:
         raise HTTPException(401, "Authentification requise")
     s = db.scalar(select(UserSession).where(UserSession.token_hash == digest_token(raw)))
-    if not s or s.expires_at.replace(tzinfo=timezone.utc) < utcnow():
+    if not s or s.expires_at.replace(tzinfo=timezone.utc) <= utcnow() or (s.last_activity_at or s.created_at).replace(tzinfo=timezone.utc) <= utcnow() - timedelta(minutes=15):
         if s:
             db.delete(s); db.commit()
         raise HTTPException(401, "Session expirée")
@@ -311,7 +317,7 @@ def admin_read_auth(auth=Depends(current_auth)):
     return u, s
 
 @app.get("/health")
-def health(): return {"ok": True, "databaseReady": DATABASE_READY, "version": "6.1-test"}
+def health(): return {"ok": True, "databaseReady": DATABASE_READY, "version": "6.2-validation"}
 
 @app.get("/")
 def root(request: Request, db: Session = Depends(db_session)):
@@ -462,6 +468,7 @@ def visible_state(data, user):
     return out
 
 def validate_state(data):
+    locations(data)
     def walk(x):
         if isinstance(x, str) and ("<" in x or ">" in x):
             raise HTTPException(400, "Caractères de balisage interdits")
@@ -502,12 +509,13 @@ def get_state(auth=Depends(current_auth), db: Session = Depends(db_session)):
 
 @app.put("/api/state")
 def put_state(payload: StatePayload, auth=Depends(require_csrf), db: Session = Depends(db_session)):
-    u, _ = auth
+    u, user_session = auth
     st = db.scalar(select(AppState).where(AppState.id == 1).with_for_update())
     if st.version != payload.version:
         raise HTTPException(409, "Les données ont changé sur un autre appareil. Recharge avant de recommencer cette action.")
     current = json.loads(st.data)
     incoming = copy.deepcopy(payload.state)
+    locations(incoming)
     for k in ("currentUser", "selectedRoute", "adminSelectedRoute", "currentScreen", "busyRoutes"):
         incoming.pop(k, None)
     if u.role != "admin":
@@ -548,11 +556,16 @@ def put_state(payload: StatePayload, auth=Depends(require_csrf), db: Session = D
         if (physical_load(incoming, rid) or incoming.get("deliveryStarted", {}).get(rid)) and not owner_id(current, rid):
             incoming.setdefault("tourRunMeta", {}).setdefault(rid, {})["operator"] = {"id":str(u.id), "name":u.name, "role":u.role}
     validate_state(incoming)
-    st.data = json.dumps(incoming, ensure_ascii=False, separators=(",", ":"))
-    st.version += 1; st.updated_at = utcnow(); st.updated_by = u.id
-    audit(db, u.id, "state_saved", {"version":st.version})
+    moves = control_transition(current, incoming, u.role != "admin")
+    user_session.last_activity_at = utcnow()
+    new_version = payload.version + 1
+    changed = db.execute(update(AppState).where(AppState.id == 1, AppState.version == payload.version).values(data=json.dumps(incoming,ensure_ascii=False,separators=(",",":")), version=new_version, updated_at=utcnow(), updated_by=u.id))
+    if changed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(409, "Conflit de version ; aucune modification enregistrée")
+    audit(db, u.id, "state_saved", {"version":new_version,"movements":moves,"beforeSha256":hashlib.sha256(json.dumps(current,sort_keys=True).encode()).hexdigest(),"afterSha256":hashlib.sha256(json.dumps(incoming,sort_keys=True).encode()).hexdigest()})
     db.commit()
-    return {"ok":True, "version":st.version, "state":visible_state(incoming, u)}
+    return {"ok":True, "version":new_version, "state":visible_state(incoming, u)}
 
 @app.get("/api/users")
 def list_users(auth=Depends(admin_read_auth), db: Session = Depends(db_session)):
@@ -623,3 +636,10 @@ def audit_list(auth=Depends(admin_read_auth), db: Session = Depends(db_session))
 
 @app.get("/sync.js")
 def sync_script(auth=Depends(current_auth)): return FileResponse(STATIC_DIR / "sync.js", media_type="application/javascript")
+
+@app.post("/api/auth/activity")
+def user_activity(auth=Depends(require_csrf), db: Session = Depends(db_session)):
+    _, session = auth
+    session.last_activity_at = utcnow()
+    db.commit()
+    return {"ok":True}
