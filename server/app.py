@@ -341,6 +341,8 @@ def change_password_page(request: Request, db: Session = Depends(db_session)):
     return FileResponse(STATIC_DIR / "change-password.html")
 @app.get("/manifest.webmanifest")
 def manifest(): return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
+@app.get("/lsn-logo.svg")
+def lsn_logo(): return FileResponse(STATIC_DIR / "lsn-logo.svg", media_type="image/svg+xml")
 @app.get("/sw.js")
 def sw(): return FileResponse(STATIC_DIR / "sw.js", media_type="application/javascript")
 
@@ -383,7 +385,7 @@ def change_password(payload: PasswordIn, auth=Depends(require_csrf), db: Session
     db.commit()
     return {"ok": True}
 
-def send_reset_email(to_email: str, reset_url: str) -> bool:
+def send_reset_email(to_email: str, reset_url: str, account_name: str = "") -> bool:
     host = os.getenv("SMTP_HOST", "").strip()
     if not host:
         return False
@@ -392,9 +394,10 @@ def send_reset_email(to_email: str, reset_url: str) -> bool:
     password = os.getenv("SMTP_PASSWORD", "")
     sender = os.getenv("SMTP_FROM", user or "noreply@lsnpharma.local")
     msg = EmailMessage()
-    msg["Subject"] = "LSN PHARMA — Réinitialisation du mot de passe"
+    label = account_name.strip() or "Compte LSN PHARMA"
+    msg["Subject"] = f"LSN PHARMA — Réinitialisation du mot de passe — {label}"
     msg["From"] = sender; msg["To"] = to_email
-    msg.set_content(f"Une demande de réinitialisation a été effectuée pour votre compte LSN PHARMA.\n\nLien valable {RESET_MINUTES} minutes :\n{reset_url}\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez ce message.")
+    msg.set_content(f"Une demande de réinitialisation a été effectuée pour : {label}.\n\nLien valable {RESET_MINUTES} minutes :\n{reset_url}\n\nSi cette demande est légitime, utilise ce lien pour définir un nouveau mot de passe.")
     ctx = ssl.create_default_context()
     with smtplib.SMTP(host, port, timeout=15) as smtp:
         smtp.starttls(context=ctx)
@@ -415,7 +418,7 @@ def forgot(payload: ForgotIn, db: Session = Depends(db_session)):
         recipient = public_email(u.email) if u.role == "admin" else pharmacist_reset_email(db)
         if os.getenv("SMTP_HOST") and recipient:
             try:
-                send_reset_email(recipient, reset_url)
+                send_reset_email(recipient, reset_url, u.name)
             except Exception as exc:
                 print("[LSN PHARMA] Erreur SMTP:", exc)
         elif not os.getenv("SMTP_HOST"):
