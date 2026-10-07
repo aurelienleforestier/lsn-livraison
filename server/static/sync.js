@@ -71,10 +71,13 @@ startDeliveryTour=function(){const r=routeObj();if(r){const m=state.tourRunMeta[
  style.textContent=`
   #zebraCapture{position:fixed!important;left:-10000px!important;top:0!important;width:1px!important;height:1px!important;opacity:.001!important;pointer-events:none!important}
   #loadScanBox .scangrid,#loadScanBox #pharmacyLoad,#loadScanBox #pharmacyLoad + .btn{display:none!important}
+  #loadScanBox .small{display:none!important}
+  #loadScanBox h3{margin:0!important;text-align:center!important;font-size:20px!important;line-height:1.25!important}
+  #loadScanBox{padding:24px 16px!important}
   #activeLoadPharmacy .scangrid{display:none!important}
   #activeLoadPharmacy #binLoad,#activeLoadPharmacy #binLoad + .btn{display:none!important}
   #activeLoadPharmacy.zebra-manual #binLoad,#activeLoadPharmacy.zebra-manual #binLoad + .btn{display:block!important}
-  .zebra-ready{padding:11px 12px;border-radius:12px;background:#eef2ff;color:#3730a3;font-size:13px;font-weight:700;margin:8px 0}
+  #activeLoadPharmacy .zebra-bin-panel{border:2px dashed #93c5fd;background:#eff6ff;border-radius:18px;padding:24px 16px;margin:14px 0;text-align:center;font-size:20px;font-weight:800;line-height:1.25}
  `;
  document.head.appendChild(style);
 
@@ -131,16 +134,17 @@ startDeliveryTour=function(){const r=routeObj();if(r){const m=state.tourRunMeta[
      const h=scanBox.querySelector('h3');
      const s=scanBox.querySelector('.small');
      if(h)h.textContent='Scanner le QR code de la pharmacie';
-     if(s)s.textContent='Appuie sur la gâchette du Zebra. La pharmacie s’ouvre automatiquement après lecture.';
+     if(s)s.textContent='';
    }
    const wrap=n('activeLoadPharmacy');
    if(wrap && currentLoadPharmacy){
      const label=wrap.querySelector('.label');
-     if(label && !wrap.querySelector('.zebra-ready')){
-       const hint=document.createElement('div');
-       hint.className='zebra-ready';
-       hint.textContent='Zebra prêt : appuie sur la gâchette pour scanner les bacs.';
-       label.insertAdjacentElement('afterend',hint);
+     if(label && !wrap.querySelector('.zebra-bin-panel')){
+       label.style.display='none';
+       const panel=document.createElement('div');
+       panel.className='zebra-bin-panel';
+       panel.textContent='Scanner les bacs';
+       label.insertAdjacentElement('afterend',panel);
      }
      if(!wrap.querySelector('#manualBinLoadToggle')){
        const input=n('binLoad');
