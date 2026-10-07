@@ -7,7 +7,7 @@ services:
     region: frankfurt
     repo: https://github.com/aurelienleforestier/lsn-livraison
     branch: serveur-test-v6
-    buildCommand: pip install -r server/requirements.txt
+    buildCommand: python server/build_frontend.py && pip install -r server/requirements.txt
     startCommand: uvicorn app:app --app-dir server --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
     autoDeployTrigger: commit
@@ -28,3 +28,5 @@ services:
         value: Pharmacien administrateur
       - key: SESSION_HOURS
         value: "12"
+      - key: PYTHONUNBUFFERED
+        value: "1"
